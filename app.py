@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
 import os
-import sys
 
 from flask import Flask, request, redirect
 from flask.ext.pymongo import PyMongo
+from slacker import Slacker
 
 import credentials  # local deploy settings
+
+AUTH_LINK = 'https://slack.com/oauth/authorize?team=T064J5B38&client_id=6154181110.20526331843&scope=identify,channels:history,channels:read,files:read,groups:history,groups:read,im:history,im:read,users:read'
+LOGIN_LINK = 'https://slack.com/oauth/authorize?team=T064J5B38&client_id=6154181110.20526331843&scope=identify'
 
 def is_local_deploy():
     return 'LOCAL' == os.environ.get('PORT', 'LOCAL')
@@ -27,11 +30,16 @@ mongo = PyMongo(app)
 
 @app.route('/')
 def index():
-    return 'Hi there, ' + sys.version
+    return redirect(LOGIN_LINK)
 
 @app.route('/auth')
 def auth():
-    return str(request.args)
+    response = Slacker.oauth.access(
+        client_id='6154181110.20526331843',
+        client_secret=os.environ['SLACK_SECRET'],
+        code=request.args['code'])
+    #slack = Slacker(request.args['code'])
+    return str(response.body)
 
 @app.route('/crash')
 def crash_page():
