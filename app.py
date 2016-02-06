@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 
 from flask import Flask
@@ -12,7 +14,11 @@ mongo = PyMongo(app)
 
 @app.route('/')
 def index():
-	return mongo.server_info()
+	return str(mongo.db)
+
+@app.route('/crash')
+def crash_page():
+	raise ValueError('Crash here', 'as planned')
 
 if __name__ == "__main__":
 	app.run(debug=True)
