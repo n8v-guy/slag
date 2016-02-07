@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
 import atexit
+import json
 import os
 import time
 import threading
+from zipfile import ZipFile
 
 import flask
 from flask.ext.pymongo import PyMongo
@@ -19,7 +21,7 @@ app = flask.Flask(__name__)
 mongo = PyMongo(app)
 
 timer_thread = threading.Thread()
-timer_string = 'START<br />'
+timer_string = 'START<br/>'
 
 def redirect_msg(url, msg):
     return flask.render_template('redirect.htm',
@@ -28,6 +30,8 @@ def redirect_msg(url, msg):
 
 @app.route('/')
 def index():
+    m = mongo
+    b = 7/(3-3)
     if flask.request.args.get('code') is None and \
        flask.request.cookies.get('token') is None:
         return redirect_msg(LOGIN_LINK, 'Logging in')
@@ -51,19 +55,17 @@ def index():
     response.set_cookie('token', token, expires=next_year)
     return response
 
-@app.route('/timer')
-def timer():
-    def timer_two():
+@app.route('/upload')
+def upload():
+    def import_zip_thread():
         global timer_string
-        timer_string += 'timer_two<br />'
-
-    def timer_one():
-        global timer_string
-        timer_string += 'timer_one<br />'
-        timer_thread = threading.Timer(1, timer_two, ())
-        timer_thread.start()
-        time.sleep(2)
-        timer_string += 'timer_one after sleep<br />'
+        with ZipFile('archive.zip') as archive:
+            with archive.open('channels.json') as channels:
+                chans = json.loads(channels.read())
+                for chan in chans:
+                    mongo.db['channels']
+                    timer_string += chan['purpose']['value'] + '<br/>'
+                    time.sleep(1)
 
     def stop_timer_thread():
         global yourThread
@@ -71,7 +73,7 @@ def timer():
 
     global timer_thread
     if not timer_thread.is_alive():
-        timer_thread = threading.Timer(1, timer_one, ())
+        timer_thread = threading.Timer(0, import_zip_thread, ())
         timer_thread.start()
         atexit.register(stop_timer_thread)
     return timer_string
