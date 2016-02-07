@@ -2,7 +2,7 @@
 
 import os
 
-from flask import Flask, request, redirect
+import flask
 from flask.ext.pymongo import PyMongo
 from slacker import Slacker
 
@@ -18,33 +18,28 @@ def is_production_deploy():
     return '1' == os.environ.get('PRODUCTION', '0')
 
 def redirect_to_https():
-    if 'http'==request.headers.get('X-Forwarded-Proto', 'https'):
-        url = request.url.replace('http://', 'https://', 1)
-        return redirect(url, code=301)
+    if 'http'==flask.request.headers.get('X-Forwarded-Proto', 'https'):
+        url = flask.request.url.replace('http://', 'https://', 1)
+        return flask.redirect(url, code=301)
 
-app = Flask(__name__)
+app = flask.Flask(__name__)
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 app.before_request(redirect_to_https)
 mongo = PyMongo(app)
-#slack = Slacker('<your-slack-api-token-goes-here>')
 
 @app.route('/')
 def index():
-    return redirect(LOGIN_LINK)
-
-@app.route('/auth')
-def auth():
-    response = Slacker.oauth.access(
+    if 'code' not in flask.request.args.keys():
+        return flask.redirect(LOGIN_LINK)
+    oauth = Slacker.oauth.access(
         client_id='6154181110.20526331843',
         client_secret=os.environ['SLACK_SECRET'],
-        code=request.args['code'])
-    #slack = Slacker(request.args['code'])
-    return str(response.body)
-
-@app.route('/crash')
-def crash_page():
-    raise ValueError('Crash here', 'as planned')
-
+        code=flask.request.args['code']).body
+    if 'ok' not in oauth.keys():
+        return flask.redirect(LOGIN_LINK)
+    client = Slacker(oauth['access_token'])
+    user_info = client.auth.test().body
+    return str(oauth) + '<br />' + str(user_info)
 
 if __name__ == "__main__":
     if is_local_deploy():
