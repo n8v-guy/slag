@@ -1,40 +1,56 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import atexit
 import json
 import os
 import time
-import threading
 from zipfile import ZipFile
 
 import flask
-from flask.ext.pymongo import PyMongo
+import flask.ext.pymongo
+import pymongo
 from slacker import Slacker
 
 import credentials  # local deploy settings
 
+SLACK_TEAM_ID = 'T064J5B38'
 SLACK_CLIENT_ID = '6154181110.20526331843'
-AUTH_LINK = 'https://slack.com/oauth/authorize?team=T064J5B38&client_id=6154181110.20526331843&scope=identify,channels:history,channels:read,files:read,groups:history,groups:read,im:history,im:read,users:read'
-LOGIN_LINK = 'https://slack.com/oauth/authorize?team=T064J5B38&client_id=6154181110.20526331843&scope=identify'
+LOGIN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
+              '&client_id=' + SLACK_CLIENT_ID + '&scope=identify')
+TOKEN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
+              '&client_id=' + SLACK_CLIENT_ID + '&scope=identify,' +
+              'channels:history,channels:read,files:read,'
+              'groups:history,groups:read,im:history,im:read,users:read')
 
 app = flask.Flask(__name__)
+# TODO eliminate MongoLab mentions
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
-mongo = PyMongo(app)
+mongo = flask.ext.pymongo.PyMongo(app)
 
-timer_thread = threading.Thread()
-timer_string = 'START<br/>'
+
+def is_local_deploy():
+    return 'LOCAL' == os.environ.get('PORT', 'LOCAL')
+
+
+def is_production_deploy():
+    return '1' == os.environ.get('PRODUCTION', '0')
+
+
+def redirect_to_https():
+    if 'http' == flask.request.headers.get('X-Forwarded-Proto', 'https'):
+        url = flask.request.url.replace('http://', 'https://', 1)
+        return flask.redirect(url, code=301)
+
 
 def redirect_msg(url, msg):
-    return flask.render_template('redirect.htm',
-                                 url_to=url,
-                                 message=msg)
+    return flask.render_template('redirect.htm', url_to=url, message=msg)
+
 
 @app.route('/')
 def index():
     if flask.request.args.get('code') is None and \
        flask.request.cookies.get('token') is None:
-        return redirect_msg(LOGIN_LINK, 'Logging in')
+        return redirect_msg(LOGIN_LINK, 'Auth required')
     token = flask.request.cookies.get('token')
     if flask.request.cookies.get('token') is None:
         try:
@@ -44,10 +60,12 @@ def index():
                 code=flask.request.args['code']).body
         except Exception as e:
             oauth = {}
+        # TODO check if our team selected
         if oauth.get('ok') is None:
             return redirect_msg(LOGIN_LINK, 'Auth required')
         token = oauth['access_token']
     client = Slacker(token)
+    # TODO check exceptions
     user_info = client.auth.test().body
     response = flask.make_response(
         redirect_msg('/search', 'Auth success'))
@@ -60,91 +78,84 @@ def index():
     response.set_cookie('user', user_info['user'], expires=next_year)
     return response
 
+
 @app.route('/search')
 def search():
     if flask.request.cookies.get('token') is None:
         return redirect_msg(LOGIN_LINK, 'Auth required')
-    q = flask.request.args.get('q')
+    q = flask.request.args.get('q', '')       # query
+    p = int(flask.request.args.get('p', 0))   # results page
+    n = int(flask.request.args.get('n', 10))  # number of results
     mongo.db.search.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user'),
                                 'q': q})
-    if q is None:
-        return flask.render_template('search.htm', results=[], q='')
-    res = mongo.db.messages.find({'$text': {'$search': q}})
-    return flask.render_template('search.htm', results=res[:10], q=q)
+    results = []
+    if q == '':
+        return flask.render_template('search.htm', **locals())
+    query = mongo.db.import_messages\
+        .find({'$text': {'$search': q}})\
+        .sort([('ts', pymongo.DESCENDING)])
+    users, streams = {}, {}
+    for res in query[p*n:(p+1)*n]:
+        # resolving externals
+        if res['from'] not in users:
+            users[res['from']] = mongo.db.import_users.find_one(res['from'])
+        if res['to'] not in streams:
+            streams[res['to']] = mongo.db.import_streams.find_one(res['to'])
+        res['from'] = users[res['from']]
+        res['to'] = streams[res['to']]
+        res['ts'] = time.ctime(res['ts'])
+        results.append(res)
+    print results
+    return flask.render_template('search.htm', **locals())
+
 
 @app.route('/import')
 def import_zip_thread():
-    global timer_string
-    ret = 'Done! <br/>'
-    with ZipFile('archive.zip') as archive, app.app_context():
+    # TODO add logging around
+    with ZipFile('archive.zip') as archive:
+        # import users
         with archive.open('users.json') as users_list:
             users = json.loads(users_list.read())
-            bulk = mongo.db.users.initialize_ordered_bulk_op()
+            bulk = mongo.db.import_users.initialize_ordered_bulk_op()
             for user in users:
-                is_deleted = user['deleted']
                 bulk.find({'_id': user['id']}).upsert().update(
                     {'$set': {'name': user['profile']['real_name'], 
                               'login': user['name'],
-                              'is_admin': not is_deleted and user['is_admin'],
-                              'avatar': user['profile']['image_24'],
-                              'mail': user['profile']['email']}})
+                              'avatar': user['profile']['image_48']}})
             result = bulk.execute()
-        with archive.open('channels.json') as channels:
-            chans = json.loads(channels.read())
-            bulk = mongo.db.channels.initialize_ordered_bulk_op()
-            for chan in chans:
-                bulk.find({'_id': chan['id']}).upsert().update(
-                    {'$set': {'name': chan['name'], 
-                              'is_archived': chan['is_archived']}})
+        # import channels
+        with archive.open('channels.json') as channel_list:
+            channels = json.loads(channel_list.read())
+            bulk = mongo.db.import_streams.initialize_ordered_bulk_op()
+            for channel in channels:
+                bulk.find({'_id': channel['id']}).upsert().update(
+                    {'$set': {'name': channel['name']}})
             result = bulk.execute()
             # import messages
-            fnames = filter(lambda n: not n.endswith('/'), archive.namelist())
-            bulk = mongo.db.messages.initialize_ordered_bulk_op()
-            for chan in chans:
-                chan_name, chan_id = chan['name'], chan['id']
-                files = filter(lambda n: n.startswith(chan_name+'/'), fnames)
-                for f in files:
-                    with archive.open(f) as day_export:
+            files = filter(lambda n: not n.endswith('/'), archive.namelist())
+            bulk = mongo.db.import_messages.initialize_ordered_bulk_op()
+            for channel in channels:
+                chan_name, chan_id = channel['name'], channel['id']
+                for filename in filter(lambda n: n.startswith(chan_name+'/'), files):
+                    with archive.open(filename) as day_export:
                         msgs = json.loads(day_export.read())
                         for msg in msgs:
-                            if msg.get('subtype') is None:
-                                bulk.find({'_id': msg['ts']}).upsert().update(
-                                    {'$set': {'text': msg['text'],
-                                              'from': msg['user'],
-                                              'channel': chan_id}})
+                            if msg.get('subtype') is not None:
+                                continue
+                            ts = msg['ts'].split('.')[0]
+                            msg_id = ts + '/' + msg['user']
+                            bulk.find({'_id': msg_id}).upsert().update(
+                                {'$set': {'ts': long(ts),
+                                          'msg': msg['text'],
+                                          'from': msg['user'],
+                                          'to': chan_id}})
             result = bulk.execute()
-    mongo.db.messages.ensure_index([('text', 'text')],
-                                   default_language='ru')
-    return ret
-
-
-@app.route('/upload')
-def upload():
-    def stop_timer_thread():
-        global yourThread
-        timer_thread.cancel()
-
-    global timer_thread
-    if not timer_thread.is_alive():
-        timer_thread = threading.Timer(0, import_zip_thread, ())
-        timer_thread.start()
-        atexit.register(stop_timer_thread)
-    return timer_string
-
-def is_local_deploy():
-    return 'LOCAL' == os.environ.get('PORT', 'LOCAL')
-
-def is_production_deploy():
-    return '1' == os.environ.get('PRODUCTION', '0')
-
-def redirect_to_https():
-    if 'http'==flask.request.headers.get('X-Forwarded-Proto', 'https'):
-        url = flask.request.url.replace('http://', 'https://', 1)
-        return flask.redirect(url, code=301)
+            mongo.db.import_messages.ensure_index([('msg', 'text')], default_language='ru')
+    return 'Import complete!'
 
 if __name__ == "__main__":
-    app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
+    app.config['PREFERRED_URL_SCHEME'] = 'https'
     app.before_request(redirect_to_https)
     if is_local_deploy():
         app.run(port=8080, debug=True)
