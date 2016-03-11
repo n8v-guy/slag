@@ -93,10 +93,12 @@ def search():
     if q == '':
         return flask.render_template('search.htm', **locals())
     query = mongo.db.import_messages\
-        .find({'$text': {'$search': q}})\
-        .sort([('ts', pymongo.DESCENDING)])
+        .find({'$text': {'$search': q}}, 
+              sort=[('ts', pymongo.DESCENDING)],
+              skip=p*n,
+              limit=n)
     users, streams = {}, {}
-    for res in query[p*n:(p+1)*n]:
+    for res in list(query):
         # resolving externals
         if res['from'] not in users:
             users[res['from']] = mongo.db.import_users.find_one(res['from'])
@@ -106,7 +108,38 @@ def search():
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
         results.append(res)
-    print results
+    return flask.render_template('search.htm', **locals())
+
+
+@app.route('/browse')
+def browse():
+    if flask.request.cookies.get('token') is None:
+        return redirect_msg(LOGIN_LINK, 'Auth required')
+    q = flask.request.args.get('q', '')       # query
+    p = int(flask.request.args.get('p', 0))   # results page
+    n = int(flask.request.args.get('n', 1000))# number of results
+    mongo.db.browse.insert_one({'_id': time.time(), 
+                                'user': flask.request.cookies.get('user'),
+                                'q': q})
+    results = []
+    if q == '':
+        return flask.render_template('search.htm', **locals())
+    query = mongo.db.import_messages\
+        .find({'to': q}, 
+              sort=[('ts', pymongo.DESCENDING)],
+              skip=p*n,
+              limit=n)
+    users, streams = {}, {}
+    for res in list(query):
+        # resolving externals
+        if res['from'] not in users:
+            users[res['from']] = mongo.db.import_users.find_one(res['from'])
+        if res['to'] not in streams:
+            streams[res['to']] = mongo.db.import_streams.find_one(res['to'])
+        res['from'] = users[res['from']]
+        res['to'] = streams[res['to']]
+        res['ts'] = time.ctime(res['ts'])
+        results.append(res)
     return flask.render_template('search.htm', **locals())
 
 
@@ -151,8 +184,13 @@ def import_zip_thread():
                                           'from': msg['user'],
                                           'to': chan_id}})
             result = bulk.execute()
-            mongo.db.import_messages.ensure_index([('msg', 'text')], default_language='ru')
-    return 'Import complete!'
+            skip_fileds = ['upserted', 'modified', 'matched', 'removed', 'inserted']
+            for field in skip_fileds:
+                result.pop(field, None)
+            mongo.db.import_messages.create_index('ts')
+            mongo.db.import_messages.create_index('to')
+            mongo.db.import_messages.create_index([('msg', 'text')], default_language='ru')
+    return 'Import complete!<br />' + str(result)
 
 if __name__ == "__main__":
     app.config['PREFERRED_URL_SCHEME'] = 'https'

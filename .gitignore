@@ -68,3 +68,8 @@ include/
 
 #Private area
 credentials.py
+
+# a bit more
+.DS_Store
+.idea
+archive.zip
