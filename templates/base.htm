@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>{% block title %}Slack archive{% endblock %}</title>
+
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/bootstrap.min.js"></script>
+    {% block head %}
+    {% endblock %}
+  </head>
+  <body style="padding-top:70px;">
+    <nav class="navbar navbar-default navbar-fixed-top">
+      <div class="container">
+        <!-- Brand and toggle get grouped for better mobile display -->
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar-main" aria-expanded="false">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="/">Slack archive</a>
+        </div>
+
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <div class="collapse navbar-collapse" id="navbar-main">
+          <ul class="nav navbar-nav">
+            <li><a href="/"><span class="glyphicon glyphicon-home"> Home</span></a></li>
+            <li><a href="/search"><span class="glyphicon glyphicon-search"> Search</span></a></li>
+            <li><a href="/browse"><span class="glyphicon glyphicon-eye-open"> Browse</span></a></li>
+          </ul>
+          <form class="navbar-form navbar-left" role="search" action="/search">
+            <div class="form-group">
+              <input type="text" name="q" class="form-control" placeholder="Find &crarr;" value="{{q}}">
+            </div>
+          </form>
+          <p class="navbar-text navbar-right">Signed in as <a href="#" class="navbar-link">{{ request.cookies.get('user') }}</a></p>
+        </div><!-- /.navbar-collapse -->
+      </div>
+    </nav>
+    <script type="text/javascript">
+      $('a[href="'+location.pathname+'"]').parent('li').addClass('active');
+    </script>
+    {% block content %}
+    {% endblock %}
+    </body>
+</html>

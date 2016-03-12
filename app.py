@@ -46,6 +46,11 @@ def redirect_msg(url, msg):
     return flask.render_template('redirect.htm', url_to=url, message=msg)
 
 
+@app.route('/<path:filename>')  
+def send_file(filename):  
+    return flask.send_from_directory(app.static_folder, filename)
+
+
 @app.route('/')
 def index():
     if flask.request.args.get('code') is None and \
@@ -140,6 +145,7 @@ def browse():
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
         results.append(res)
+    flash('SUUUUUUUUUUUUUUUUUPER')
     return flask.render_template('search.htm', **locals())
 
 
