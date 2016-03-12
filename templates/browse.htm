@@ -1,0 +1,21 @@
+{% extends "base.htm" %}
+{% block title %}Browse channels{% endblock %}
+{% block content %}
+  <h3>Public channels</h3>
+    <ol class="breadcrumb">
+    {% for c in channels %}
+      <li><a href="/browse?s={{c['_id']}}">#{{c['name']}}</a></li>
+    {% endfor %}
+    </ol>
+    {% for r in results %}
+    <hr style="clear:both;"/>
+    <img src="{{r['from']['avatar']}}" align="left" style="margin:4px;">
+    #{{r['to']['name']}}, {{r['ts']}}<br/>
+    <b>{{r['from']['name']}}</b>:
+    {{r['msg']}}
+    {% endfor %}
+    {% if s!='' %}
+    <hr style="clear:both;"/>
+    <a href="?s={{s}}&p={{p+1}}" style="font-size:14pt;">&gt;&gt;&gt;</a>
+    {% endif %}
+{% endblock %}
