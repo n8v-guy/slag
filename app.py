@@ -120,17 +120,18 @@ def search():
 def browse():
     if flask.request.cookies.get('token') is None:
         return redirect_msg(LOGIN_LINK, 'Auth required')
-    q = flask.request.args.get('q', '')       # query
+    s = flask.request.args.get('s', '')       # stream
     p = int(flask.request.args.get('p', 0))   # results page
     n = int(flask.request.args.get('n', 1000))# number of results
     mongo.db.browse.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user'),
-                                'q': q})
+                                's': s})
     results = []
-    if q == '':
-        return flask.render_template('search.htm', **locals())
+    if s == '':
+        channels = list(mongo.db.import_streams.find({}, sort=[('name', pymongo.ASCENDING)]))
+        return flask.render_template('browse.htm', **locals())
     query = mongo.db.import_messages\
-        .find({'to': q}, 
+        .find({'to': s}, 
               sort=[('ts', pymongo.DESCENDING)],
               skip=p*n,
               limit=n)
@@ -145,8 +146,7 @@ def browse():
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
         results.append(res)
-    flash('SUUUUUUUUUUUUUUUUUPER')
-    return flask.render_template('search.htm', **locals())
+    return flask.render_template('browse.htm', **locals())
 
 
 @app.route('/import')
