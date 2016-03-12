@@ -73,7 +73,7 @@ def index():
     # TODO check exceptions
     user_info = client.auth.test().body
     response = flask.make_response(
-        redirect_msg('/search', 'Auth success'))
+        redirect_msg('/browse', 'Auth success'))
     next_year = time.strftime("%a, %d-%b-%Y %T GMT",
                               time.gmtime(time.time()+365*24*60*60))
     mongo.db.logins.insert_one({'_id': time.time(), 
