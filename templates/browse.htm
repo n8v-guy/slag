@@ -1,21 +1,56 @@
 {% extends "base.htm" %}
 {% block title %}Browse channels{% endblock %}
 {% block content %}
-  <h3>Public channels</h3>
-    <ol class="breadcrumb">
-    {% for c in channels %}
-      <li><a href="/browse?s={{c['_id']}}">#{{c['name']}}</a></li>
-    {% endfor %}
-    </ol>
-    {% for r in results %}
-    <hr style="clear:both;"/>
-    <img src="{{r['from']['avatar']}}" align="left" style="margin:4px;">
-    #{{r['to']['name']}}, {{r['ts']}}<br/>
-    <b>{{r['from']['name']}}</b>:
-    {{r['msg']}}
-    {% endfor %}
-    {% if s!='' %}
-    <hr style="clear:both;"/>
-    <a href="?s={{s}}&p={{p+1}}" style="font-size:14pt;">&gt;&gt;&gt;</a>
-    {% endif %}
+
+<div class="panel-group" id="accordion" role="tablist" aria-multiselectable="true">
+  <div class="panel panel-default">
+    <div class="panel-heading" role="tab" id="headingOne">
+      <h4 class="panel-title">
+        <a role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseOne" aria-expanded="true" aria-controls="collapseOne">Public channels</a>
+      </h4>
+    </div>
+    <div id="collapseOne" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="headingOne">
+      <div class="panel-body">
+        <ul class="nav nav-tabs">
+          <li role="presentation"><a href="#">My [NOT IMPLEMENTED YET]</a></li>
+          <li role="presentation"><a href="#">Active [NOT IMPLEMENTED YET]</a></li>
+          <li role="presentation" class="active"><a href="#">All</a></li>
+        </ul>
+
+        <ol class="breadcrumb">
+          <li style="display:none;"><a href="#"></a></li>
+        {% for c in channels %}
+          <li><a href="/browse?s={{c['_id']}}">#{{c['name']}}</a></li>
+        {% endfor %}
+          <li><a href="#"></a></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <div class="panel panel-default">
+    <div class="panel-heading" role="tab" id="headingTwo">
+      <h4 class="panel-title">
+        <a class="collapsed" role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">Private Groups</a>
+      </h4>
+    </div>
+    <div id="collapseTwo" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingTwo">
+      <div class="panel-body">
+        You need to grant advanced permissions <a href="/">here</a>. [NOT IMPLEMENTED YET]
+      </div>
+    </div>
+  </div>
+  <div class="panel panel-default">
+    <div class="panel-heading" role="tab" id="headingThree">
+      <h4 class="panel-title">
+        <a class="collapsed" role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseThree" aria-expanded="false" aria-controls="collapseThree">Direct Messages</a>
+      </h4>
+    </div>
+    <div id="collapseThree" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingThree">
+      <div class="panel-body">
+        You need to grant advanced permissions <a href="/">here</a>. [NOT IMPLEMENTED YET]
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
