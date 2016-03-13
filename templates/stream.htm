@@ -2,6 +2,15 @@
 {% block title %}Browse channels{% endblock %}
 {% block content %}
 
+<nav>
+  <ul class="pagination">
+    <li><a>Pages</a></li>
+    {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
+    <li class="{{'active' if page==p else ''}}"><a href="?s={{s}}&p={{page}}">{{page+1}}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+
 {% for r in results %}
 <hr style="clear:both;"/>
 <img src="{{r['from']['avatar']}}" align="left" style="margin:4px;">
@@ -9,9 +18,16 @@
 <b>{{r['from']['name']}}</b>:
 {{r['msg']}}
 {% endfor %}
-{% if s!='' %}
 <hr style="clear:both;"/>
-<a href="?s={{s}}&p={{p+1}}" style="font-size:14pt;">&gt;&gt;&gt;</a>
-{% endif %}
-    
+
+
+<nav>
+  <ul class="pagination">
+    <li><a>Pages</a></li>
+    {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
+    <li class="{{'active' if page==p else ''}}"><a href="?s={{s}}&p={{page}}">{{page+1}}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+
 {% endblock %}

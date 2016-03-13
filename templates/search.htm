@@ -1,12 +1,17 @@
 {% extends "base.htm" %}
 {% block title %}Search page{% endblock %}
-{% block head %}
-    {{ super() }}
-    <style type="text/css">
-        .important { color: #336699; }
-    </style>
-{% endblock %}
 {% block content %}
+
+{% if total is defined and total>0 %}
+<nav>
+  <ul class="pagination">
+    <li><a>Pages</a></li>
+    {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
+    <li class="{{'active' if page==p else ''}}"><a href="?q={{q}}&p={{page}}">{{page+1}}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+
     {% for r in results %}
     <hr style="clear:both;"/>
     <img src="{{r['from']['avatar']}}" align="left" style="margin:4px;">
@@ -14,8 +19,16 @@
     <b>{{r['from']['name']}}</b>:
     {{r['msg']}}
     {% endfor %}
-    {% if q!='' %}
     <hr style="clear:both;"/>
-    <a href="?q={{q}}&p={{p+1}}" style="font-size:14pt;">&gt;&gt;&gt;</a>
-    {% endif %}
+
+<nav>
+  <ul class="pagination">
+    <li><a>Pages</a></li>
+    {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
+    <li class="{{'active' if page==p else ''}}"><a href="?q={{q}}&p={{page}}">{{page+1}}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
+
 {% endblock %}
