@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import time
 from zipfile import ZipFile
 
@@ -44,6 +45,49 @@ def redirect_to_https():
 
 def redirect_msg(url, msg):
     return flask.render_template('redirect.htm', url_to=url, message=msg)
+
+
+def username(user):
+    return '@'+mongo.db.import_users.find_one(user[1:])['login']
+
+
+def streamname(stream):
+    return '#'+mongo.db.import_streams.find_one(stream[1:])['name']
+
+def parse_link(m):
+    def link_page(url, title):
+        if not title:
+            title = url
+        return '||[<a href="'+url+'">'+title+'</a>]||'
+    def link_user(user, title):
+        return link_page('javascript:void(0)', username(user))
+    def link_stream(stream, title):
+        return link_page('javascript:void(0)', streamname(stream))
+    target = m.group(1)
+    label = m.group(3)
+    if target.startswith('@'):
+        return link_user(target, label)
+    if target.startswith('#'):
+        return link_stream(target, label)
+    if target == '!here':
+        return link_page('javascript:void(0)', '@here')
+    if target.startswith('http'):
+        return link_page(target, label)
+    return m.group(0)
+
+
+def restore_html(m):
+    return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
+
+LINK_RE = re.compile(r'<([^|>]+)(\|([^|>]+))?>')
+HREF_RE = re.compile(r'\|\|\[([^\]]+)\]\|\|')
+def parse_msg(msg):
+    msg = re.sub(LINK_RE, parse_link, msg)
+    msg = msg.replace('<', '&lt;')
+    msg = msg.replace('>', '&gt;')
+    msg = re.sub(HREF_RE, restore_html, msg)
+    msg = msg.replace('\n', '<br/>')
+    return flask.Markup(msg)
 
 
 @app.route('/<path:filename>')  
@@ -113,6 +157,7 @@ def search():
         res['from'] = users[res['from']]
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
+        res['msg'] = parse_msg(res['msg'])
         results.append(res)
     return flask.render_template('search.htm', **locals())
 
@@ -150,6 +195,7 @@ def browse():
         res['from'] = users[res['from']]
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
+        res['msg'] = parse_msg(res['msg'])
         results.append(res)
     return flask.render_template('stream.htm', **locals())
 
@@ -166,7 +212,7 @@ def import_zip_thread():
                 bulk.find({'_id': user['id']}).upsert().update(
                     {'$set': {'name': user['profile']['real_name'], 
                               'login': user['name'],
-                              'avatar': user['profile']['image_48']}})
+                              'avatar': user['profile']['image_72']}})
             result = bulk.execute()
         # import channels
         with archive.open('channels.json') as channel_list:
