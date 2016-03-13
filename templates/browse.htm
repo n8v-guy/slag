@@ -6,15 +6,24 @@
   <div class="panel panel-default">
     <div class="panel-heading" role="tab" id="headingOne">
       <h4 class="panel-title">
-        <a role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseOne" aria-expanded="true" aria-controls="collapseOne">Public channels</a>
+        <a role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseOne" aria-expanded="true" aria-controls="collapseOne">Public channels, {{ f + ': ' + channels|length|string }}</a>
       </h4>
     </div>
     <div id="collapseOne" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="headingOne">
       <div class="panel-body">
         <ul class="nav nav-tabs">
-          <li role="presentation"><a href="#">My [NOT IMPLEMENTED YET]</a></li>
-          <li role="presentation"><a href="#">Active [NOT IMPLEMENTED YET]</a></li>
-          <li role="presentation" class="active"><a href="#">All</a></li>
+          <li role="presentation" class="{{'active' if f=='all'     else ''}}">
+            <a href="/browse?filter=all">All</a>
+        </li>
+          <li role="presentation" class="{{'active' if f=='active'  else ''}}">
+            <a href="/browse?filter=active">Active</a>
+        </li>
+          <li role="presentation" class="{{'active' if f=='my'      else ''}}">
+            <a href="/browse?filter=my">My [NOT IMPLEMENTED YET]</a>
+            </li>
+          <li role="presentation" class="{{'active' if f=='archive' else ''}}">
+            <a href="/browse?filter=archive">Archive</a>
+        </li>
         </ul>
 
         <ol class="breadcrumb">

@@ -128,7 +128,10 @@ def browse():
                                 's': s})
     results = []
     if s == '':
-        channels = list(mongo.db.import_streams.find({}, sort=[('name', pymongo.ASCENDING)]))
+        f = flask.request.args.get('filter', 'active')
+        filters = {'all': {}, 'active': {'active': True}, 'archive': {'active': False}, }
+        if f not in filters: f = 'active'
+        channels = list(mongo.db.import_streams.find(filters[f], sort=[('name', pymongo.ASCENDING)]))
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.import_messages\
         .find({'to': s}, 
@@ -168,13 +171,26 @@ def import_zip_thread():
             channels = json.loads(channel_list.read())
             bulk = mongo.db.import_streams.initialize_ordered_bulk_op()
             for channel in channels:
+                pins = []
+                if 'pins' in channel:
+                    for pin in channel['pins']:
+                        ts = pin['id'].split('.')[0]
+                        msg_id = ts + '/' + pin['user']
+                        pins.append(msg_id)
                 bulk.find({'_id': channel['id']}).upsert().update(
-                    {'$set': {'name': channel['name']}})
+                    {'$set': {'name': channel['name'],
+                              'type': 0, # public channel
+                              'active': not channel['is_archived'],
+                              'topic': channel['topic']['value'],
+                              'pins': pins}})
             result = bulk.execute()
+            mongo.db.import_streams.create_index('type')
+            mongo.db.import_streams.create_index('active')
             # import messages
             files = filter(lambda n: not n.endswith('/'), archive.namelist())
             bulk = mongo.db.import_messages.initialize_ordered_bulk_op()
             for channel in channels:
+                continue
                 chan_name, chan_id = channel['name'], channel['id']
                 for filename in filter(lambda n: n.startswith(chan_name+'/'), files):
                     with archive.open(filename) as day_export:
@@ -189,13 +205,13 @@ def import_zip_thread():
                                           'msg': msg['text'],
                                           'from': msg['user'],
                                           'to': chan_id}})
-            result = bulk.execute()
-            skip_fileds = ['upserted', 'modified', 'matched', 'removed', 'inserted']
-            for field in skip_fileds:
-                result.pop(field, None)
+            #result = bulk.execute()
             mongo.db.import_messages.create_index('ts')
             mongo.db.import_messages.create_index('to')
             mongo.db.import_messages.create_index([('msg', 'text')], default_language='ru')
+    skip_fileds = ['upserted', 'modified', 'matched', 'removed', 'inserted']
+    for field in skip_fileds:
+        result.pop(field, None)
     return 'Import complete!<br />' + str(result)
 
 if __name__ == "__main__":
