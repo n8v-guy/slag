@@ -5,15 +5,21 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <title>{% block title %}Slack archive{% endblock %}</title>
+    <title>Slag > {% block title %}Slack archive{% endblock %}</title>
 
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <script src="/js/jquery.min.js"></script>
     <script src="/js/bootstrap.min.js"></script>
     {% block head %}
     {% endblock %}
+    <style type="text/css">
+    body {
+      padding: 20px;
+      padding-top: 70px;
+    }
+    </style>
   </head>
-  <body style="padding-top:70px;">
+  <body>
     <nav class="navbar navbar-default navbar-fixed-top">
       <div class="container">
         <!-- Brand and toggle get grouped for better mobile display -->
@@ -30,9 +36,9 @@
         <!-- Collect the nav links, forms, and other content for toggling -->
         <div class="collapse navbar-collapse" id="navbar-main">
           <ul class="nav navbar-nav">
-            <li><a href="/"><span class="glyphicon glyphicon-home"> Home</span></a></li>
-            <li><a href="/search"><span class="glyphicon glyphicon-search"> Search</span></a></li>
             <li><a href="/browse"><span class="glyphicon glyphicon-eye-open"> Browse</span></a></li>
+            <li><a href="/search"><span class="glyphicon glyphicon-search"> Search</span></a></li>
+            <li><a href="/"><span class="glyphicon glyphicon-cog"> Settings</span></a></li>
           </ul>
           <form class="navbar-form navbar-left" role="search" action="/search">
             <div class="input-group">

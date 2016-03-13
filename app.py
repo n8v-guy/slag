@@ -146,7 +146,7 @@ def browse():
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
         results.append(res)
-    return flask.render_template('browse.htm', **locals())
+    return flask.render_template('stream.htm', **locals())
 
 
 @app.route('/import')
