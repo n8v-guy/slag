@@ -90,7 +90,7 @@ def search():
         return redirect_msg(LOGIN_LINK, 'Auth required')
     q = flask.request.args.get('q', '')       # query
     p = int(flask.request.args.get('p', 0))   # results page
-    n = int(flask.request.args.get('n', 10))  # number of results
+    n = int(flask.request.args.get('n', 50))  # number of results
     mongo.db.search.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user'),
                                 'q': q})
@@ -102,8 +102,9 @@ def search():
               sort=[('ts', pymongo.DESCENDING)],
               skip=p*n,
               limit=n)
+    total = query.count()
     users, streams = {}, {}
-    for res in list(query):
+    for res in tuple(query):
         # resolving externals
         if res['from'] not in users:
             users[res['from']] = mongo.db.import_users.find_one(res['from'])
@@ -138,8 +139,9 @@ def browse():
               sort=[('ts', pymongo.DESCENDING)],
               skip=p*n,
               limit=n)
+    total = query.count()
     users, streams = {}, {}
-    for res in list(query):
+    for res in tuple(query):
         # resolving externals
         if res['from'] not in users:
             users[res['from']] = mongo.db.import_users.find_one(res['from'])
