@@ -5,7 +5,7 @@
 {% if total is defined and total>0 %}
 <nav>
   <ul class="pagination">
-    <li><a>Pages</a></li>
+    <li class="disabled"><a>Pages</a></li>
     {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
     <li class="{{'active' if page==p else ''}}"><a href="?q={{q}}&p={{page}}">{{page+1}}</a></li>
     {% endfor %}
@@ -23,7 +23,7 @@
 
 <nav>
   <ul class="pagination">
-    <li><a>Pages</a></li>
+    <li class="disabled"><a>Pages</a></li>
     {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
     <li class="{{'active' if page==p else ''}}"><a href="?q={{q}}&p={{page}}">{{page+1}}</a></li>
     {% endfor %}
