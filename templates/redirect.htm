@@ -1,7 +1,7 @@
 {% extends "base.htm" %}
 {% block title %}Redirect to {{url_to}} {% endblock %}
 {% block head %}
-  <meta http-equiv="refresh" content="10;URL={{url_to}}">
+  <meta http-equiv="refresh" content="0;URL={{url_to}}">
 {% endblock %}
 {% block content %}
   <b>{{message}}</b>, redirecting to <a href="{{url_to}}">destination page</a> just in second...
