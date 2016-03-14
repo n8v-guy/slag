@@ -48,21 +48,25 @@ def redirect_msg(url, msg):
 
 
 def username(user):
-    return '@'+mongo.db.import_users.find_one(user[1:])['login']
+    return '@'+mongo.db.users.find_one(user[1:])['login']
 
 
 def streamname(stream):
-    return '#'+mongo.db.import_streams.find_one(stream[1:])['name']
+    return '#'+mongo.db.streams.find_one(stream[1:])['name']
+
 
 def parse_link(m):
     def link_page(url, title):
         if not title:
             title = url
         return '||[<a href="'+url+'">'+title+'</a>]||'
+
     def link_user(user, title):
         return link_page('javascript:void(0)', username(user))
+
     def link_stream(stream, title):
         return link_page('javascript:void(0)', streamname(stream))
+
     target = m.group(1)
     label = m.group(3)
     if target.startswith('@'):
@@ -79,8 +83,11 @@ def parse_link(m):
 def restore_html(m):
     return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
 
+
 LINK_RE = re.compile(r'<([^|>]+)(\|([^|>]+))?>')
 HREF_RE = re.compile(r'\|\|\[([^\]]+)\]\|\|')
+
+
 def parse_msg(msg):
     msg = re.sub(LINK_RE, parse_link, msg)
     msg = msg.replace('<', '&lt;')
@@ -107,7 +114,7 @@ def index():
                 client_id=SLACK_CLIENT_ID,
                 client_secret=os.environ['SLACK_SECRET'],
                 code=flask.request.args['code']).body
-        except Exception as e:
+        except Exception:
             oauth = {}
         # TODO check if our team selected
         if oauth.get('ok') is None:
@@ -133,6 +140,8 @@ def search():
     if flask.request.cookies.get('token') is None:
         return redirect_msg(LOGIN_LINK, 'Auth required')
     q = flask.request.args.get('q', '')       # query
+    s = flask.request.args.get('s', '')       # stream
+    c = flask.request.args.get('c', '')       # context
     p = int(flask.request.args.get('p', 0))   # results page
     n = int(flask.request.args.get('n', 50))  # number of results
     mongo.db.search.insert_one({'_id': time.time(), 
@@ -141,21 +150,31 @@ def search():
     results = []
     if q == '':
         return flask.render_template('search.htm', **locals())
-    query = mongo.db.import_messages\
-        .find({'$text': {'$search': q}}, 
+    condition = {'$text': {'$search': q}}
+    if c != '':
+        ts = ts_from_message_id(c)
+        condition = {'ts': {'$lt': ts+3*60*60, '$gt': ts-3*60*60}, 'to': s}
+        print condition
+    elif s != '':
+        condition = {'$text': {'$search': q}, 'to': s}
+    query = mongo.db.messages\
+        .find(condition,
               sort=[('ts', pymongo.DESCENDING)],
               skip=p*n,
               limit=n)
     total = query.count()
     users, streams = {}, {}
-    for res in tuple(query):
+    query = sorted(tuple(query), key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
+    for res in query:
         # resolving externals
         if res['from'] not in users:
-            users[res['from']] = mongo.db.import_users.find_one(res['from'])
+            users[res['from']] = mongo.db.users.find_one(res['from'])
         if res['to'] not in streams:
-            streams[res['to']] = mongo.db.import_streams.find_one(res['to'])
+            streams[res['to']] = mongo.db.streams.find_one(res['to'])
         res['from'] = users[res['from']]
         res['to'] = streams[res['to']]
+        res['ctx'] = message_id(str(res['ts'])+'.'+str(res['ts_dot']),
+                                res['from']['_id'])
         res['ts'] = time.ctime(res['ts'])
         res['msg'] = parse_msg(res['msg'])
         results.append(res)
@@ -176,28 +195,38 @@ def browse():
     if s == '':
         f = flask.request.args.get('filter', 'active')
         filters = {'all': {}, 'active': {'active': True}, 'archive': {'active': False}, }
-        if f not in filters: f = 'active'
-        channels = list(mongo.db.import_streams.find(filters[f], sort=[('name', pymongo.ASCENDING)]))
+        if f not in filters:
+            f = 'active'
+        channels = list(mongo.db.streams.find(filters[f], sort=[('name', pymongo.ASCENDING)]))
         return flask.render_template('browse.htm', **locals())
-    query = mongo.db.import_messages\
+    query = mongo.db.messages\
         .find({'to': s}, 
               sort=[('ts', pymongo.DESCENDING)],
               skip=p*n,
               limit=n)
     total = query.count()
     users, streams = {}, {}
-    for res in tuple(query):
+    query = sorted(tuple(query), key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
+    for res in query:
         # resolving externals
         if res['from'] not in users:
-            users[res['from']] = mongo.db.import_users.find_one(res['from'])
+            users[res['from']] = mongo.db.users.find_one(res['from'])
         if res['to'] not in streams:
-            streams[res['to']] = mongo.db.import_streams.find_one(res['to'])
+            streams[res['to']] = mongo.db.streams.find_one(res['to'])
         res['from'] = users[res['from']]
         res['to'] = streams[res['to']]
         res['ts'] = time.ctime(res['ts'])
         res['msg'] = parse_msg(res['msg'])
         results.append(res)
     return flask.render_template('stream.htm', **locals())
+
+
+def message_id(timestamp, user):
+    return timestamp + '/' + user
+
+
+def ts_from_message_id(msg_id):
+    return int(msg_id.split('/')[0].split('.')[0])
 
 
 @app.route('/import')
@@ -207,58 +236,57 @@ def import_zip_thread():
         # import users
         with archive.open('users.json') as users_list:
             users = json.loads(users_list.read())
-            bulk = mongo.db.import_users.initialize_ordered_bulk_op()
+            bulk = mongo.db.users.initialize_ordered_bulk_op()
             for user in users:
                 bulk.find({'_id': user['id']}).upsert().update(
                     {'$set': {'name': user['profile']['real_name'], 
                               'login': user['name'],
                               'avatar': user['profile']['image_72']}})
             result = bulk.execute()
+
         # import channels
         with archive.open('channels.json') as channel_list:
             channels = json.loads(channel_list.read())
-            bulk = mongo.db.import_streams.initialize_ordered_bulk_op()
+            bulk = mongo.db.streams.initialize_ordered_bulk_op()
             for channel in channels:
                 pins = []
                 if 'pins' in channel:
                     for pin in channel['pins']:
-                        ts = pin['id'].split('.')[0]
-                        msg_id = ts + '/' + pin['user']
+                        msg_id = message_id(pin['id'], pin['user'])
                         pins.append(msg_id)
                 bulk.find({'_id': channel['id']}).upsert().update(
                     {'$set': {'name': channel['name'],
-                              'type': 0, # public channel
+                              'type': 0,  # public channel
                               'active': not channel['is_archived'],
                               'topic': channel['topic']['value'],
                               'pins': pins}})
             result = bulk.execute()
-            mongo.db.import_streams.create_index('type')
-            mongo.db.import_streams.create_index('active')
+
             # import messages
-            files = filter(lambda n: not n.endswith('/'), archive.namelist())
-            bulk = mongo.db.import_messages.initialize_ordered_bulk_op()
+            files = filter(lambda n: not n.endswith(os.path.sep), archive.namelist())
+            bulk = mongo.db.messages.initialize_ordered_bulk_op()
             for channel in channels:
-                continue
                 chan_name, chan_id = channel['name'], channel['id']
-                for filename in filter(lambda n: n.startswith(chan_name+'/'), files):
+                for filename in filter(lambda n: n.startswith(chan_name+os.path.sep), files):
                     with archive.open(filename) as day_export:
                         msgs = json.loads(day_export.read())
                         for msg in msgs:
                             if msg.get('subtype') is not None:
                                 continue
-                            ts = msg['ts'].split('.')[0]
-                            msg_id = ts + '/' + msg['user']
+                            msg_id = message_id(msg['ts'], msg['user'])
                             bulk.find({'_id': msg_id}).upsert().update(
-                                {'$set': {'ts': long(ts),
+                                {'$set': {'ts': int(msg['ts'].split('.')[0]),
+                                          'ts_dot': int(msg['ts'].split('.')[1]),
                                           'msg': msg['text'],
                                           'from': msg['user'],
                                           'to': chan_id}})
-            #result = bulk.execute()
-            mongo.db.import_messages.create_index('ts')
-            mongo.db.import_messages.create_index('to')
-            mongo.db.import_messages.create_index([('msg', 'text')], default_language='ru')
-    skip_fileds = ['upserted', 'modified', 'matched', 'removed', 'inserted']
-    for field in skip_fileds:
+            result = bulk.execute()
+            mongo.db.messages.create_index('ts')
+            mongo.db.messages.create_index('to')
+            mongo.db.messages.create_index('from')
+            mongo.db.messages.create_index([('msg', 'text')], default_language='ru')
+    skip_fields = ['upserted', 'modified', 'matched', 'removed', 'inserted']
+    for field in skip_fields:
         result.pop(field, None)
     return 'Import complete!<br />' + str(result)
 
