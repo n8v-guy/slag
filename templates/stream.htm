@@ -1,25 +1,37 @@
 {% extends "base.htm" %}
 {% block title %}Browse channels{% endblock %}
+{% block css %}
+  body {
+    text-align: center;
+  }
+{% endblock %}
 {% block content %}
 
 <nav>
   <ul class="pagination">
-    <li class="disabled"<a>Pages</a></li>
+    <li class="disabled"><a>Pages</a></li>
     {% for page in range(((total/n)|round(0, 'ceil'))|int) %}
     <li class="{{'active' if page==p else ''}}"><a href="?s={{s}}&p={{page}}">{{page+1}}</a></li>
     {% endfor %}
   </ul>
 </nav>
 
-{% for r in results %}
-<hr style="clear:both;"/>
-<img src="{{r['from']['avatar']}}" align="left" style="margin:4px;">
-#{{r['to']['name']}}, {{r['ts']}}<br/>
-<b>{{r['from']['name']}}</b>:
-{{r['msg']}}
-{% endfor %}
-<hr style="clear:both;"/>
-
+<div class="messages">
+  {% for r in results %}
+  <div class="media">
+      <div class="media-left media-top">
+        <img class="media-object" src="{{r['from']['avatar']}}">
+      </div>
+      <table class="media-body">
+        <tr>
+          <td><h4 class="media-heading">{{r['from']['name']}} <small>@{{r['from']['login']}}</small></h4></td>
+          <td align="right"><h4 class="media-heading"><small>#{{r['to']['name']}}, {{r['ts']}}</small></h4></td>
+        </tr>
+        <tr><td colspan="2" class="span">{{r['msg']}}</td></tr>
+      </table>
+  </div>
+  {% endfor %}
+</div>
 
 <nav>
   <ul class="pagination">
