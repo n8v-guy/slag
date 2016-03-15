@@ -154,7 +154,6 @@ def search():
     if c != '':
         ts = ts_from_message_id(c)
         condition = {'ts': {'$lt': ts+3*60*60, '$gt': ts-3*60*60}, 'to': s}
-        print condition
     elif s != '':
         condition = {'$text': {'$search': q}, 'to': s}
     query = mongo.db.messages\
@@ -239,9 +238,14 @@ def import_zip_thread():
             bulk = mongo.db.users.initialize_ordered_bulk_op()
             for user in users:
                 bulk.find({'_id': user['id']}).upsert().update(
-                    {'$set': {'name': user['profile']['real_name'], 
+                    {'$set': {'name': user['profile']['real_name'],
                               'login': user['name'],
                               'avatar': user['profile']['image_72']}})
+            # manual insert for slackbot user
+            bulk.find({'_id': 'USLACKBOT'}).upsert().update(
+                {'$set': {'name': 'slackbot',
+                          'login': 'slackbot',
+                          'avatar': 'https://a.slack-edge.com/0180/img/slackbot_72.png'}})
             result = bulk.execute()
 
         # import channels
