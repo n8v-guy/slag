@@ -59,7 +59,7 @@ def parse_link(m):
     def link_page(url, title):
         if not title:
             title = url
-        return '||[<a href="'+url+'">'+title+'</a>]||'
+        return wrap_html('<a href="'+url+'">'+title+'</a>')
 
     def link_user(user, title):
         return link_page('javascript:void(0)', username(user))
@@ -73,8 +73,8 @@ def parse_link(m):
         return link_user(target, label)
     if target.startswith('#'):
         return link_stream(target, label)
-    if target == '!here':
-        return link_page('javascript:void(0)', '@here')
+    if target.startswith('!'):
+        return link_page('javascript:void(0)', '@'+target[1:])
     if target.startswith('http'):
         return link_page(target, label)
     return m.group(0)
@@ -84,15 +84,49 @@ def restore_html(m):
     return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
 
 
-LINK_RE = re.compile(r'<([^|>]+)(\|([^|>]+))?>')
-HREF_RE = re.compile(r'\|\|\[([^\]]+)\]\|\|')
+def wrap_html(text):
+    return '||['+text+']||'
+
+
+def re_iter(regexp, replace, s):
+    cur, diff = 0, 0
+    s_copy = s
+    for res in HTML_RE.finditer(s_copy):
+        l,h = res.start(), res.end()
+        prev = s[cur:diff+l]
+        part = re.sub(regexp, replace, prev)
+        s = s[:cur] + part + s[diff+l:]
+        diff += len(part)-len(prev)
+        cur += len(part) + (h-l)
+    return s[:cur] + re.sub(regexp, replace, s[cur:])
+
+
+def markup(regexp, tag, s):
+    return re_iter(regexp, lambda m: wrap_html('<'+tag+'>'+m.group(1)+'</'+tag+'>'), s)
+
+
+HTML_RE = re.compile(r'\|\|\[([^\]]+)\]\|\|')
+LINK_RE = re.compile(r'\B<([^|>]+)(\|([^|>]+))?>\B')
+QUOT_RE = re.compile(r'^>(.*)$', re.MULTILINE)
+BOLD_RE = re.compile(r'\B\*([^+]+)\*\B')
+ITAL_RE = re.compile(r'\b_([^_]+)_\b')
+STRK_RE = re.compile(r'\B~([^~]+)~\B')
+PREF_RE = re.compile(r'\B```([^`]+)```\B')
+CODE_RE = re.compile(r'\B`([^`]+)`\B')
 
 
 def parse_msg(msg):
-    msg = re.sub(LINK_RE, parse_link, msg)
+    msg = msg.replace('&gt;', '>') # yes it happens, not from user (&amp; then)
+    msg = markup(QUOT_RE, 'blockquote', msg)
+    msg = markup(STRK_RE, 'strike', msg)
+    msg = markup(PREF_RE, 'pre', msg)
+    msg = markup(CODE_RE, 'code', msg)
+    msg = markup(BOLD_RE, 'b', msg)
+    msg = markup(ITAL_RE, 'i', msg)
+    msg = re_iter(LINK_RE, parse_link, msg)
     msg = msg.replace('<', '&lt;')
     msg = msg.replace('>', '&gt;')
-    msg = re.sub(HREF_RE, restore_html, msg)
+    msg = re.sub(HTML_RE, restore_html, msg)
     msg = msg.replace('\n', '<br/>')
     return flask.Markup(msg)
 
@@ -143,7 +177,7 @@ def search():
     s = flask.request.args.get('s', '')       # stream
     c = flask.request.args.get('c', '')       # context
     p = int(flask.request.args.get('p', 0))   # results page
-    n = int(flask.request.args.get('n', 50))  # number of results
+    n = int(flask.request.args.get('n', 100)) # number of results
     mongo.db.search.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user'),
                                 'q': q})
