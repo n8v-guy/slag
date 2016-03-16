@@ -68,7 +68,7 @@ def parse_link(m):
         return link_page('javascript:void(0)', streamname(stream))
 
     target = m.group(1)
-    label = m.group(3)
+    label = m.group(2)
     if target.startswith('@'):
         return link_user(target, label)
     if target.startswith('#'):
@@ -78,10 +78,6 @@ def parse_link(m):
     if target.startswith('http'):
         return link_page(target, label)
     return m.group(0)
-
-
-def restore_html(m):
-    return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
 
 
 def wrap_html(text):
@@ -101,31 +97,52 @@ def re_iter(regexp, replace, s):
     return s[:cur] + re.sub(regexp, replace, s[cur:])
 
 
-def markup(regexp, tag, s):
-    return re_iter(regexp, lambda m: wrap_html('<'+tag+'>'+m.group(1)+'</'+tag+'>'), s)
+def markup(regexp, tag, s, code=False):
+    def wrap_all(m):
+        return wrap_html('<'+tag+'>'+raw_text(m.group(1))+'</'+tag+'>')
+
+    def wrap_tags(m):
+        return wrap_html('<'+tag+'>')+m.group(1)+wrap_html('</'+tag+'>')
+
+    return re_iter(regexp, wrap_all if code else wrap_tags, s)
 
 
-HTML_RE = re.compile(r'\|\|\[([^\]]+)\]\|\|')
-LINK_RE = re.compile(r'\B<([^|>]+)(\|([^|>]+))?>\B')
-QUOT_RE = re.compile(r'^>(.*)$', re.MULTILINE)
-BOLD_RE = re.compile(r'\B\*([^+]+)\*\B')
-ITAL_RE = re.compile(r'\b_([^_]+)_\b')
-STRK_RE = re.compile(r'\B~([^~]+)~\B')
-PREF_RE = re.compile(r'\B```([^`]+)```\B')
-CODE_RE = re.compile(r'\B`([^`]+)`\B')
+def raw_text(s):
+    return s.replace('<', '&#60;')
+
+
+def use_entities(s):
+    return s.replace('<', '&lt;').replace('>', '&gt;')
+
+
+def restore_html(m):
+    return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
+
+
+HTML_RE = re.compile(r'\|\|\[(.+?)\]\|\|', re.MULTILINE|re.DOTALL)
+LINK_RE = re.compile(r'\B<([^|>]+)\|?([^|>]+)?>\B')
+QUOT_RE = re.compile(r'^>(.+?)$', re.MULTILINE)
+BOLD_RE = re.compile(r'\B\*(.+?)\*\B')
+ITAL_RE = re.compile(r'\b_(.+?)_\b')
+STRK_RE = re.compile(r'\B~(.+?)~\B')
+PREF_RE = re.compile(r'\B```(.+?)```\B', re.MULTILINE|re.DOTALL)
+CODE_RE = re.compile(r'\B`(.+?)`\B')
 
 
 def parse_msg(msg):
+    # TODO move parser to separate class with test
     msg = msg.replace('&gt;', '>') # yes it happens, not from user (&amp; then)
+    # markup processing
+    msg = markup(PREF_RE, 'pre', msg, True)
+    msg = markup(CODE_RE, 'code', msg, True)
     msg = markup(QUOT_RE, 'blockquote', msg)
     msg = markup(STRK_RE, 'strike', msg)
-    msg = markup(PREF_RE, 'pre', msg)
-    msg = markup(CODE_RE, 'code', msg)
     msg = markup(BOLD_RE, 'b', msg)
     msg = markup(ITAL_RE, 'i', msg)
     msg = re_iter(LINK_RE, parse_link, msg)
-    msg = msg.replace('<', '&lt;')
-    msg = msg.replace('>', '&gt;')
+    # apply entities for sources
+    msg = use_entities(msg)
+    # restore markup
     msg = re.sub(HTML_RE, restore_html, msg)
     msg = msg.replace('\n', '<br/>')
     return flask.Markup(msg)
@@ -187,7 +204,7 @@ def search():
     condition = {'$text': {'$search': q}}
     if c != '':
         ts = ts_from_message_id(c)
-        condition = {'ts': {'$lt': ts+3*60*60, '$gt': ts-3*60*60}, 'to': s}
+        condition = {'ts': {'$lt': ts+60*60, '$gt': ts-60*60}, 'to': s}
     elif s != '':
         condition = {'$text': {'$search': q}, 'to': s}
     query = mongo.db.messages\

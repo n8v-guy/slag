@@ -76,7 +76,10 @@
               </span>
             </div>
           </form>
-          <p class="navbar-text navbar-right">Signed in as <a href="#" class="navbar-link">{{ request.cookies.get('user') }}</a></p>
+          <ul class="nav navbar-nav navbar-right">
+            <li><a href="https://github.com/n8v-guy/slag/issues"><span class="glyphicon glyphicon-comment"> Bugreport</span></a></li>
+            <li><a href="/"><span class="glyphicon glyphicon-log-out"> Sign&thinsp;out&thinsp;</span></a></li>
+          </ul>
         </div><!-- /.navbar-collapse -->
       </div>
     </nav>
