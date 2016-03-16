@@ -319,6 +319,21 @@ def import_zip_thread():
 
             # import messages
             files = filter(lambda n: not n.endswith(os.path.sep), archive.namelist())
+            # TODO check additional useful fields for these types
+            types_import = {
+                # useful
+                '', 'me_message', 
+                'file_share', 'file_mention', 
+                'reminder_add', 'reminder_delete',
+                'channel_purpose', 'channel_topic', 'channel_name', 
+                # useless
+                'bot_add', 'bot_remove', 
+                'channel_join', 'channel_leave', 
+                'channel_archive','channel_unarchive'}
+            # format is not supported yet
+            types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
+            types_new = {''}
+            types = tuple(map(hash, types_import))
             bulk = mongo.db.messages.initialize_ordered_bulk_op()
             for channel in channels:
                 chan_name, chan_id = channel['name'], channel['id']
@@ -326,24 +341,30 @@ def import_zip_thread():
                     with archive.open(filename) as day_export:
                         msgs = json.loads(day_export.read())
                         for msg in msgs:
-                            if msg.get('subtype') is not None:
+                            stype = msg.get('subtype', '')
+                            if stype not in types_import:
+                                if stype not in types_ignore:
+                                    types_new.add(stype)
                                 continue
                             msg_id = message_id(msg['ts'], msg['user'])
                             bulk.find({'_id': msg_id}).upsert().update(
                                 {'$set': {'ts': int(msg['ts'].split('.')[0]),
                                           'ts_dot': int(msg['ts'].split('.')[1]),
+                                          'type': types.index(hash(stype)),
                                           'msg': msg['text'],
                                           'from': msg['user'],
                                           'to': chan_id}})
             result = bulk.execute()
             mongo.db.messages.create_index('ts')
             mongo.db.messages.create_index('to')
+            mongo.db.messages.create_index('type')
             mongo.db.messages.create_index('from')
             mongo.db.messages.create_index([('msg', 'text')], default_language='ru')
     skip_fields = ['upserted', 'modified', 'matched', 'removed', 'inserted']
     for field in skip_fields:
         result.pop(field, None)
-    return 'Import complete!<br />' + str(result)
+    # TODO Check why 'nModified' is always appears in result (duplicates?)
+    return 'Import complete!<br />' + str(result) + '<br/>' + str(types_new)
 
 if __name__ == "__main__":
     app.config['PREFERRED_URL_SCHEME'] = 'https'
