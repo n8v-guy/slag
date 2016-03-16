@@ -186,6 +186,19 @@ def index():
     return response
 
 
+@app.route('/logout')
+def logout():
+    response = flask.make_response(
+        redirect_msg('https://slack.com', 'Bye'))
+    year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
+                              time.gmtime(time.time()-365*24*60*60))
+    mongo.db.logouts.insert_one({'_id': time.time(), 
+                                'user': flask.request.cookies.get('user')})
+    response.set_cookie('token', '', expires=year_ago)
+    response.set_cookie('user', '', expires=year_ago)
+    return response
+
+
 @app.route('/search')
 def search():
     if flask.request.cookies.get('token') is None:

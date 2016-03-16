@@ -64,9 +64,9 @@
         <!-- Collect the nav links, forms, and other content for toggling -->
         <div class="collapse navbar-collapse" id="navbar-main">
           <ul class="nav navbar-nav">
-            <li><a href="/browse"><span class="glyphicon glyphicon-eye-open"> Browse</span></a></li>
-            <li><a href="/search"><span class="glyphicon glyphicon-search"> Search</span></a></li>
-            <li><a href="/"><span class="glyphicon glyphicon-cog"> Settings</span></a></li>
+            <li><a href="/browse"><span class="glyphicon glyphicon-eye-open"></span>&nbsp;&nbsp;Browse</a></li>
+            <li><a href="/search"><span class="glyphicon glyphicon-search"></span>&nbsp;&nbsp;Search</a></li>
+            <li><a href="/"><span class="glyphicon glyphicon-cog"></span>&nbsp;&nbsp;Settings</a></li>
           </ul>
           <form class="navbar-form navbar-left" role="search" action="/search">
             <div class="input-group">
@@ -77,8 +77,10 @@
             </div>
           </form>
           <ul class="nav navbar-nav navbar-right">
-            <li><a href="https://github.com/n8v-guy/slag/issues"><span class="glyphicon glyphicon-comment"> Bugreport</span></a></li>
-            <li><a href="/"><span class="glyphicon glyphicon-log-out"> Sign&thinsp;out&thinsp;</span></a></li>
+            <li><a href="https://github.com/n8v-guy/slag/issues"><span class="glyphicon glyphicon-comment"></span>&nbsp;&nbsp;Feedback</a></li>
+            {% if request.cookies.get('user') %}
+            <li><a href="/logout" title="{{request.cookies.get('user')}}"><span class="glyphicon glyphicon-log-out"></span>&nbsp;&nbsp;Sign&thinsp;out</a></li>
+            {% endif %}
           </ul>
         </div><!-- /.navbar-collapse -->
       </div>
