@@ -27,6 +27,13 @@ app = flask.Flask(__name__)
 # TODO eliminate MongoLab mentions
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 mongo = flask.ext.pymongo.PyMongo(app)
+tokens = tuple()
+
+
+def load_tokens():
+    global tokens
+    with app.app_context():
+        tokens = tuple(mongo.db.logins.distinct('token'))
 
 
 def is_local_deploy():
@@ -171,6 +178,7 @@ def index():
         if oauth.get('ok') is None:
             return redirect_msg(LOGIN_LINK, 'Auth required')
         token = oauth['access_token']
+        load_tokens()
     client = Slacker(token)
     # TODO check exceptions
     user_info = client.auth.test().body
@@ -181,6 +189,7 @@ def index():
     mongo.db.logins.insert_one({'_id': time.time(), 
                                 'user': user_info['user'],
                                 'token': token})
+    mongo.db.logins.create_index('token')
     response.set_cookie('token', token, expires=next_year)
     response.set_cookie('user', user_info['user'], expires=next_year)
     return response
@@ -201,7 +210,7 @@ def logout():
 
 @app.route('/search')
 def search():
-    if flask.request.cookies.get('token') is None:
+    if flask.request.cookies.get('token') not in tokens:
         return redirect_msg(LOGIN_LINK, 'Auth required')
     q = flask.request.args.get('q', '')       # query
     s = flask.request.args.get('s', '')       # stream
@@ -246,7 +255,7 @@ def search():
 
 @app.route('/browse')
 def browse():
-    if flask.request.cookies.get('token') is None:
+    if flask.request.cookies.get('token') not in tokens:
         return redirect_msg(LOGIN_LINK, 'Auth required')
     s = flask.request.args.get('s', '')       # stream
     p = int(flask.request.args.get('p', 0))   # results page
@@ -333,6 +342,7 @@ def import_zip_thread():
             # import messages
             files = filter(lambda n: not n.endswith(os.path.sep), archive.namelist())
             # TODO check additional useful fields for these types
+            # TODO look formating at https://api.slack.com/docs/formatting/builder
             types_import = {
                 # useful
                 '', 'me_message', 
@@ -362,6 +372,7 @@ def import_zip_thread():
                             msg_id = message_id(msg['ts'], msg['user'])
                             bulk.find({'_id': msg_id}).upsert().update(
                                 {'$set': {'ts': int(msg['ts'].split('.')[0]),
+                                          # TODO: place ts_dot part into 'ts' type long
                                           'ts_dot': int(msg['ts'].split('.')[1]),
                                           'type': types.index(hash(stype)),
                                           'msg': msg['text'],
@@ -382,6 +393,7 @@ def import_zip_thread():
 if __name__ == "__main__":
     app.config['PREFERRED_URL_SCHEME'] = 'https'
     app.before_request(redirect_to_https)
+    load_tokens()
     if is_local_deploy():
         app.run(port=8080, debug=True)
     else:
