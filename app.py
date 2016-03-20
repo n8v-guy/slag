@@ -46,12 +46,6 @@ def is_production_deploy():
     return '1' == os.environ.get('PRODUCTION', '0')
 
 
-def redirect_to_https():
-    if 'http' == flask.request.headers.get('X-Forwarded-Proto', 'https'):
-        url = flask.request.url.replace('http://', 'https://', 1)
-        return flask.redirect(url, code=301)
-
-
 def redirect_page(url, msg):
     return flask.render_template('redirect.htm', url_to=url, message=msg)
 
@@ -170,8 +164,6 @@ def send_file(filename):
 
 @app.route('/users')
 def active_users():
-    if flask.request.cookies.get('token') not in tokens:
-        return redirect_page(LOGIN_LINK, 'Auth required')
     domain = flask.request.args.get('domain')
     if domain:
         domain = '@' + domain
@@ -209,7 +201,7 @@ def login():
         oauth = {}
     # TODO check if our team selected
     if oauth.get('ok') is None:
-        return redirect_page(LOGIN_LINK, 'Auth required')
+        return basic_page('Auth failed', str(oauth))
     token = oauth['access_token']
     load_tokens()
     client = Slacker(token)
@@ -243,8 +235,6 @@ def logout():
 
 @app.route('/search')
 def search():
-    if flask.request.cookies.get('token') not in tokens:
-        return redirect_page(LOGIN_LINK, 'Auth required')
     q = flask.request.args.get('q', '')        # query
     s = flask.request.args.get('s', '')        # stream
     c = flask.request.args.get('c', '')        # context
@@ -288,8 +278,6 @@ def search():
 
 @app.route('/browse')
 def browse():
-    if flask.request.cookies.get('token') not in tokens:
-        return redirect_page(LOGIN_LINK, 'Auth required')
     s = flask.request.args.get('s', '')         # stream
     p = int(flask.request.args.get('p', 0))     # results page
     n = int(flask.request.args.get('n', 1000))  # number of results
@@ -336,8 +324,6 @@ def ts_from_message_id(msg_id):
 
 @app.route('/import', methods=['GET', 'POST'])
 def upload():
-    if flask.request.cookies.get('token') not in tokens:
-        return redirect_page(LOGIN_LINK, 'Auth required')
     # TODO check admin rights here
     if not is_local_deploy():
         return redirect_page('/browse', 'Access denied')
@@ -361,8 +347,6 @@ def upload():
 @app.route('/import_db')
 def import_db():
     # TODO convert this to background task
-    if flask.request.cookies.get('token') not in tokens:
-        return redirect_page(LOGIN_LINK, 'Auth required')
     # TODO check admin rights here
     if not is_local_deploy():
         return redirect_page('/browse', 'Admin rights required')
@@ -456,9 +440,23 @@ def import_db():
                       str(result) + '<br/>' +
                       str(types_new))
 
+
+@app.before_request
+def redirect_to_https():
+    if not flask.request.is_secure:
+        url = flask.request.url.replace('http://', 'https://', 1)
+        return flask.redirect(url, code=301)
+
+
+@app.before_request
+def check_auth():
+    if flask.request.cookies.get('token') not in tokens and \
+       flask.request.path not in ['/', '/login']:
+            return redirect_page(LOGIN_LINK, 'Auth required')
+
+
 if __name__ == "__main__":
     app.config['PREFERRED_URL_SCHEME'] = 'https'
-    app.before_request(redirect_to_https)
     load_tokens()
     if is_local_deploy():
         app.run(port=8080, debug=True)
