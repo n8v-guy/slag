@@ -168,6 +168,29 @@ def send_file(filename):
     return flask.send_from_directory(app.static_folder, filename)
 
 
+@app.route('/users')
+def active_users():
+    if flask.request.cookies.get('token') not in tokens:
+        return redirect_page(LOGIN_LINK, 'Auth required')
+    domain = flask.request.args.get('domain')
+    if domain:
+        domain = '@' + domain
+    active = []
+    with ZipFile('archive.zip') as archive:
+        # import users
+        with archive.open('users.json') as all_users:
+            users = json.loads(all_users.read())
+            for user in users:
+                if 'deleted' not in user or not user['deleted']:
+                    user_login = user['name']
+                    if domain:
+                        mail = user['profile'].get('email', '')
+                        if mail.endswith(domain):
+                            user_login = mail.split('@')[0]
+                    active.append(user_login)
+    return ' '.join(map(lambda u: u+'@', active))
+
+
 @app.route('/')
 @app.route('/login')
 def login():
