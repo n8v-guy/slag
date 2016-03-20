@@ -444,7 +444,7 @@ def import_db():
 @app.before_request
 def redirect_to_https():
     is_http = flask.request.is_secure or \
-              'https' == flask.request.headers.get('X-Forwarded-Proto');
+              'https' == flask.request.headers.get('X-Forwarded-Proto')
     if is_http and not is_local_deploy():
         url = flask.request.url.replace('http://', 'https://', 1)
         return flask.redirect(url, code=301)
@@ -453,7 +453,8 @@ def redirect_to_https():
 @app.before_request
 def check_auth():
     if flask.request.cookies.get('token') not in tokens and \
-       flask.request.path not in ['/', '/login']:
+       flask.request.path not in ['/', '/login'] and \
+       not os.path.isfile(os.path.join(app.static_folder, flask.request.path[1:])):
             return redirect_page(LOGIN_LINK, 'Auth required')
 
 
