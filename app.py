@@ -10,10 +10,12 @@ from zipfile import ZipFile
 import flask
 import flask.ext.pymongo
 import pymongo
-from slacker import Slacker
+from slacker import Slacker, Error
 
+# noinspection PyUnresolvedReferences
 import credentials  # local deploy settings
 
+# TODO ask and save this after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
 SLACK_CLIENT_ID = '6154181110.20526331843'
 LOGIN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
@@ -58,11 +60,11 @@ def basic_page(title, html):
     return flask.render_template('basic.htm', **locals())
 
 
-def username(user):
+def user_name(user):
     return '@'+mongo.db.users.find_one(user[1:])['login']
 
 
-def streamname(stream):
+def stream_name(stream):
     return '#'+mongo.db.streams.find_one(stream[1:])['name']
 
 
@@ -72,21 +74,23 @@ def parse_link(m):
             title = url
         return wrap_html('<a href="'+url+'">'+title+'</a>')
 
-    def link_user(user, title):
-        return link_page('javascript:void(0)', username(user))
+    def link_user(user):
+        return link_page('javascript:void(0)', user_name(user))
 
-    def link_stream(stream, title):
-        return link_page('javascript:void(0)', streamname(stream))
+    def link_stream(stream):
+        return link_page('javascript:void(0)', stream_name(stream))
 
     target = m.group(1)
     label = m.group(2)
     if target.startswith('@'):
-        return link_user(target, label)
+        return link_user(target)
     if target.startswith('#'):
-        return link_stream(target, label)
+        return link_stream(target)
     if target.startswith('!'):
         return link_page('javascript:void(0)', '@'+target[1:])
-    if target.startswith('http'):
+    if target.startswith('http://') or \
+       target.startswith('https://') or \
+       target.startswith('mailto:'):
         return link_page(target, label)
     return m.group(0)
 
@@ -99,7 +103,7 @@ def re_iter(regexp, replace, s):
     cur, diff = 0, 0
     s_copy = s
     for res in HTML_RE.finditer(s_copy):
-        l,h = res.start(), res.end()
+        l, h = res.start(), res.end()
         prev = s[cur:diff+l]
         part = re.sub(regexp, replace, prev)
         s = s[:cur] + part + s[diff+l:]
@@ -130,19 +134,19 @@ def restore_html(m):
     return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
 
 
-HTML_RE = re.compile(r'\|\|\[(.+?)\]\|\|', re.MULTILINE|re.DOTALL)
+HTML_RE = re.compile(r'\|\|\[(.+?)\]\|\|', re.MULTILINE | re.DOTALL)
 LINK_RE = re.compile(r'\B<([^|>]+)\|?([^|>]+)?>\B')
 QUOT_RE = re.compile(r'^>(.+?)$', re.MULTILINE)
 BOLD_RE = re.compile(r'\B\*(.+?)\*\B')
 ITAL_RE = re.compile(r'\b_(.+?)_\b')
 STRK_RE = re.compile(r'\B~(.+?)~\B')
-PREF_RE = re.compile(r'\B```(.+?)```\B', re.MULTILINE|re.DOTALL)
+PREF_RE = re.compile(r'\B```(.+?)```\B', re.MULTILINE | re.DOTALL)
 CODE_RE = re.compile(r'\B`(.+?)`\B')
 
 
 def parse_msg(msg):
-    # TODO move parser to separate class with test
-    msg = msg.replace('&gt;', '>') # yes it happens, not from user (&amp; then)
+    # TODO move parser to separate class with tests
+    msg = msg.replace('&gt;', '>')  # yes it happens, not from user (&amp; then)
     # markup processing
     msg = markup(PREF_RE, 'pre', msg, True)
     msg = markup(CODE_RE, 'code', msg, True)
@@ -165,24 +169,26 @@ def send_file(filename):
 
 
 @app.route('/')
-def index():
-    if flask.request.args.get('code') is None and \
-       flask.request.cookies.get('token') is None:
+@app.route('/login')
+def login():
+    # if logging in is not in progress
+    if not flask.request.args.get('code'):
+        if flask.request.cookies.get('token') in tokens:
+            return flask.redirect('/browse', 302)
         return redirect_page(LOGIN_LINK, 'Auth required')
-    token = flask.request.cookies.get('token')
-    if flask.request.cookies.get('token') is None:
-        try:
-            oauth = Slacker.oauth.access(
-                client_id=SLACK_CLIENT_ID,
-                client_secret=os.environ['SLACK_SECRET'],
-                code=flask.request.args['code']).body
-        except Exception:
-            oauth = {}
-        # TODO check if our team selected
-        if oauth.get('ok') is None:
-            return redirect_page(LOGIN_LINK, 'Auth required')
-        token = oauth['access_token']
-        load_tokens()
+    # login part
+    try:
+        oauth = Slacker.oauth.access(
+            client_id=SLACK_CLIENT_ID,
+            client_secret=os.environ['SLACK_SECRET'],
+            code=flask.request.args['code']).body
+    except Error:
+        oauth = {}
+    # TODO check if our team selected
+    if oauth.get('ok') is None:
+        return redirect_page(LOGIN_LINK, 'Auth required')
+    token = oauth['access_token']
+    load_tokens()
     client = Slacker(token)
     # TODO check exceptions
     user_info = client.auth.test().body
@@ -190,7 +196,7 @@ def index():
         redirect_page('/browse', 'Auth success'))
     next_year = time.strftime("%a, %d-%b-%Y %T GMT",
                               time.gmtime(time.time()+365*24*60*60))
-    mongo.db.logins.insert_one({'_id': time.time(), 
+    mongo.db.logins.insert_one({'_id': time.time(),
                                 'user': user_info['user'],
                                 'token': token})
     mongo.db.logins.create_index('token')
@@ -204,7 +210,7 @@ def logout():
     response = flask.make_response(
         redirect_page('https://slack.com', 'Bye'))
     year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
-                              time.gmtime(time.time()-365*24*60*60))
+                             time.gmtime(time.time()-365*24*60*60))
     mongo.db.logouts.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user')})
     response.set_cookie('token', '', expires=year_ago)
@@ -216,11 +222,11 @@ def logout():
 def search():
     if flask.request.cookies.get('token') not in tokens:
         return redirect_page(LOGIN_LINK, 'Auth required')
-    q = flask.request.args.get('q', '')       # query
-    s = flask.request.args.get('s', '')       # stream
-    c = flask.request.args.get('c', '')       # context
-    p = int(flask.request.args.get('p', 0))   # results page
-    n = int(flask.request.args.get('n', 100)) # number of results
+    q = flask.request.args.get('q', '')        # query
+    s = flask.request.args.get('s', '')        # stream
+    c = flask.request.args.get('c', '')        # context
+    p = int(flask.request.args.get('p', 0))    # results page
+    n = int(flask.request.args.get('n', 100))  # number of results
     mongo.db.search.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user'),
                                 'q': q})
@@ -261,9 +267,9 @@ def search():
 def browse():
     if flask.request.cookies.get('token') not in tokens:
         return redirect_page(LOGIN_LINK, 'Auth required')
-    s = flask.request.args.get('s', '')       # stream
-    p = int(flask.request.args.get('p', 0))   # results page
-    n = int(flask.request.args.get('n', 1000))# number of results
+    s = flask.request.args.get('s', '')         # stream
+    p = int(flask.request.args.get('p', 0))     # results page
+    n = int(flask.request.args.get('n', 1000))  # number of results
     mongo.db.browse.insert_one({'_id': time.time(), 
                                 'user': flask.request.cookies.get('user'),
                                 's': s})
@@ -309,6 +315,9 @@ def ts_from_message_id(msg_id):
 def upload():
     if flask.request.cookies.get('token') not in tokens:
         return redirect_page(LOGIN_LINK, 'Auth required')
+    # TODO check admin rights here
+    if not is_local_deploy():
+        return redirect_page('/browse', 'Access denied')
     archive = flask.request.files.get('archive')
     if archive and archive.filename.endswith('.zip'):
         archive.save('archive.zip')
@@ -328,8 +337,12 @@ def upload():
 
 @app.route('/import_db')
 def import_db():
+    # TODO convert this to background task
     if flask.request.cookies.get('token') not in tokens:
         return redirect_page(LOGIN_LINK, 'Auth required')
+    # TODO check admin rights here
+    if not is_local_deploy():
+        return redirect_page('/browse', 'Admin rights required')
     # TODO add logging around
     with ZipFile('archive.zip') as archive:
         # import users
@@ -346,7 +359,7 @@ def import_db():
                 {'$set': {'name': 'slackbot',
                           'login': 'slackbot',
                           'avatar': 'https://a.slack-edge.com/0180/img/slackbot_72.png'}})
-            result = bulk.execute()
+            bulk.execute()
 
         # import channels
         with archive.open('channels.json') as channel_list:
@@ -364,7 +377,7 @@ def import_db():
                               'active': not channel['is_archived'],
                               'topic': channel['topic']['value'],
                               'pins': pins}})
-            result = bulk.execute()
+            bulk.execute()
 
             # import messages
             files = filter(lambda n: not n.endswith(os.path.sep), archive.namelist())
@@ -379,7 +392,7 @@ def import_db():
                 # useless
                 'bot_add', 'bot_remove', 
                 'channel_join', 'channel_leave', 
-                'channel_archive','channel_unarchive'}
+                'channel_archive', 'channel_unarchive'}
             # format is not supported yet
             types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
             types_new = {''}
