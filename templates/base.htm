@@ -66,21 +66,30 @@
           <ul class="nav navbar-nav">
             <li><a href="/browse"><span class="glyphicon glyphicon-eye-open"></span>&nbsp;&nbsp;Browse</a></li>
             <li><a href="/search"><span class="glyphicon glyphicon-search"></span>&nbsp;&nbsp;Search</a></li>
-            <li><a href="/"><span class="glyphicon glyphicon-cog"></span>&nbsp;&nbsp;Settings</a></li>
+            <li class="dropdown">
+              <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">More <span class="caret"></span></a>
+              <ul class="dropdown-menu">
+                <li class="dropdown-header">Advanced</li>
+                <li><a href="/import"><span class="glyphicon glyphicon-import"></span>&nbsp;&nbsp;Import</a></li>
+                <li><a href="#"><span class="glyphicon glyphicon-cloud-download"></span>&nbsp;&nbsp;Export</a></li>
+                <li><a href="#"><span class="glyphicon glyphicon-cog"></span>&nbsp;&nbsp;Settings</a></li>
+                {% if request.cookies.get('user') %}
+                <li role="separator" class="divider"></li>
+                <li><a href="/logout" title="{{request.cookies.get('user')}}"><span class="glyphicon glyphicon-log-out"></span>&nbsp;&nbsp;Sign&thinsp;out</a></li>
+                {% endif %}
+              </ul>
+            </li>
           </ul>
           <form class="navbar-form navbar-left" role="search" action="/search">
             <div class="input-group">
               <input type="text" name="q" class="form-control" placeholder="Find &crarr;" value="{{q}}">
               <span class="input-group-btn">
-                <button class="btn btn-default" type="submit"><span class="glyphicon glyphicon-search"></button>
+                <button class="btn btn-default" type="submit"><span class="glyphicon glyphicon-search"></span></button>
               </span>
             </div>
           </form>
           <ul class="nav navbar-nav navbar-right">
             <li><a href="https://github.com/n8v-guy/slag/issues"><span class="glyphicon glyphicon-comment"></span>&nbsp;&nbsp;Feedback</a></li>
-            {% if request.cookies.get('user') %}
-            <li><a href="/logout" title="{{request.cookies.get('user')}}"><span class="glyphicon glyphicon-log-out"></span>&nbsp;&nbsp;Sign&thinsp;out</a></li>
-            {% endif %}
           </ul>
         </div><!-- /.navbar-collapse -->
       </div>
