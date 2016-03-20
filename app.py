@@ -443,7 +443,9 @@ def import_db():
 
 @app.before_request
 def redirect_to_https():
-    if not flask.request.is_secure:
+    is_http = flask.request.is_secure or \
+              'https' == flask.request.headers.get('X-Forwarded-Proto');
+    if is_http and not is_local_deploy():
         url = flask.request.url.replace('http://', 'https://', 1)
         return flask.redirect(url, code=301)
 
