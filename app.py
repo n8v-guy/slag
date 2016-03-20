@@ -50,8 +50,12 @@ def redirect_to_https():
         return flask.redirect(url, code=301)
 
 
-def redirect_msg(url, msg):
+def redirect_page(url, msg):
     return flask.render_template('redirect.htm', url_to=url, message=msg)
+
+
+def basic_page(title, html):
+    return flask.render_template('basic.htm', **locals())
 
 
 def username(user):
@@ -164,7 +168,7 @@ def send_file(filename):
 def index():
     if flask.request.args.get('code') is None and \
        flask.request.cookies.get('token') is None:
-        return redirect_msg(LOGIN_LINK, 'Auth required')
+        return redirect_page(LOGIN_LINK, 'Auth required')
     token = flask.request.cookies.get('token')
     if flask.request.cookies.get('token') is None:
         try:
@@ -176,14 +180,14 @@ def index():
             oauth = {}
         # TODO check if our team selected
         if oauth.get('ok') is None:
-            return redirect_msg(LOGIN_LINK, 'Auth required')
+            return redirect_page(LOGIN_LINK, 'Auth required')
         token = oauth['access_token']
         load_tokens()
     client = Slacker(token)
     # TODO check exceptions
     user_info = client.auth.test().body
     response = flask.make_response(
-        redirect_msg('/browse', 'Auth success'))
+        redirect_page('/browse', 'Auth success'))
     next_year = time.strftime("%a, %d-%b-%Y %T GMT",
                               time.gmtime(time.time()+365*24*60*60))
     mongo.db.logins.insert_one({'_id': time.time(), 
@@ -198,7 +202,7 @@ def index():
 @app.route('/logout')
 def logout():
     response = flask.make_response(
-        redirect_msg('https://slack.com', 'Bye'))
+        redirect_page('https://slack.com', 'Bye'))
     year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
                               time.gmtime(time.time()-365*24*60*60))
     mongo.db.logouts.insert_one({'_id': time.time(), 
@@ -211,7 +215,7 @@ def logout():
 @app.route('/search')
 def search():
     if flask.request.cookies.get('token') not in tokens:
-        return redirect_msg(LOGIN_LINK, 'Auth required')
+        return redirect_page(LOGIN_LINK, 'Auth required')
     q = flask.request.args.get('q', '')       # query
     s = flask.request.args.get('s', '')       # stream
     c = flask.request.args.get('c', '')       # context
@@ -256,7 +260,7 @@ def search():
 @app.route('/browse')
 def browse():
     if flask.request.cookies.get('token') not in tokens:
-        return redirect_msg(LOGIN_LINK, 'Auth required')
+        return redirect_page(LOGIN_LINK, 'Auth required')
     s = flask.request.args.get('s', '')       # stream
     p = int(flask.request.args.get('p', 0))   # results page
     n = int(flask.request.args.get('n', 1000))# number of results
@@ -301,8 +305,31 @@ def ts_from_message_id(msg_id):
     return int(msg_id.split('/')[0].split('.')[0])
 
 
-@app.route('/import')
-def import_zip_thread():
+@app.route('/import', methods=['GET', 'POST'])
+def upload():
+    if flask.request.cookies.get('token') not in tokens:
+        return redirect_page(LOGIN_LINK, 'Auth required')
+    archive = flask.request.files.get('archive')
+    if archive and archive.filename.endswith('.zip'):
+        archive.save('archive.zip')
+        return redirect_page('/import_db', archive.filename + ' saved')
+    return basic_page('Archive upload',
+                      '<form action="" method="POST" enctype="multipart/form-data">'
+                      ' <div class="input-group input-group-lg col-md-7" align="center">'
+                      '  <span class="input-group-addon">Select .zip archive</span>'
+                      '   <input type="file" name="archive" class="form-control"/>'
+                      '   <span class="input-group-btn">'
+                      '    <input type="submit" class="btn btn-primary" value="Import"/>'
+                      '   </span>'
+                      '  </span>'
+                      ' </div>'
+                      '</form>')
+
+
+@app.route('/import_db')
+def import_db():
+    if flask.request.cookies.get('token') not in tokens:
+        return redirect_page(LOGIN_LINK, 'Auth required')
     # TODO add logging around
     with ZipFile('archive.zip') as archive:
         # import users
@@ -388,7 +415,10 @@ def import_zip_thread():
     for field in skip_fields:
         result.pop(field, None)
     # TODO Check why 'nModified' is always appears in result (duplicates?)
-    return 'Import complete!<br />' + str(result) + '<br/>' + str(types_new)
+    return basic_page('Archive import complete',
+                      'Import complete!<br />' +
+                      str(result) + '<br/>' +
+                      str(types_new))
 
 if __name__ == "__main__":
     app.config['PREFERRED_URL_SCHEME'] = 'https'
