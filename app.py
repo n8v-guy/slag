@@ -1,15 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+
 import json
 import os
 import re
+import threading
 import time
 from zipfile import ZipFile
 
 import flask
 import flask.ext.pymongo
 import pymongo
+import schedule
 from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
@@ -444,7 +448,7 @@ def import_db():
 @app.before_request
 def redirect_to_https():
     is_http = flask.request.is_secure or \
-              'https' == flask.request.headers.get('X-Forwarded-Proto')
+              'http' == flask.request.headers.get('X-Forwarded-Proto')
     if is_http and not is_local_deploy():
         url = flask.request.url.replace('http://', 'https://', 1)
         return flask.redirect(url, code=301)
@@ -458,9 +462,31 @@ def check_auth():
             return redirect_page(LOGIN_LINK, 'Auth required')
 
 
+def check_tokens():
+    pass
+
+
+def fetch_messages():
+    print('fetch')
+    pass  # taking items from generator here
+
+
+def setup_scheduler():
+    schedule.every(1).seconds.do(fetch_messages)
+    schedule.every(12).hours.do(check_tokens)
+
+
+def background_task():
+    # minimal interval from setup_scheduler here
+    threading.Timer(1, background_task).start()
+    schedule.run_pending()
+
+
 if __name__ == "__main__":
     app.config['PREFERRED_URL_SCHEME'] = 'https'
     load_tokens()
+    #setup_scheduler()
+    #background_task()##
     if is_local_deploy():
         app.run(port=8080, debug=True)
     else:
