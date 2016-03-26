@@ -1,7 +1,2 @@
 #!/bin/bash
-
-if [ "$PRODUCTION" == "1" ]; then
-    gunicorn app:app
-else
-    python app.py
-fi
+gunicorn app:app

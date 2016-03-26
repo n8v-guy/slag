@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
+from __future__ import print_function, division
 
+import atexit
 import json
 import os
 import re
@@ -30,24 +31,23 @@ TOKEN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               'groups:history,groups:read,im:history,im:read,users:read')
 
 app = flask.Flask(__name__)
+app.config['PREFERRED_URL_SCHEME'] = 'https'
 # TODO eliminate MongoLab mentions
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 mongo = flask.ext.pymongo.PyMongo(app)
 tokens = tuple()
+bg_task = None
 
 
-def load_tokens():
+def reload_tokens():
     global tokens
     with app.app_context():
         tokens = tuple(mongo.db.logins.distinct('token'))
+    return tokens
 
 
-def is_local_deploy():
-    return 'LOCAL' == os.environ.get('PORT', 'LOCAL')
-
-
-def is_production_deploy():
-    return '1' == os.environ.get('PRODUCTION', '0')
+def is_production():
+    return 'LOCAL' != os.environ.get('PORT', 'LOCAL')
 
 
 def redirect_page(url, msg):
@@ -161,8 +161,8 @@ def parse_msg(msg):
     return flask.Markup(msg)
 
 
-@app.route('/<path:filename>')  
-def send_file(filename):  
+@app.route('/<path:filename>')
+def send_file(filename):
     return flask.send_from_directory(app.static_folder, filename)
 
 
@@ -207,7 +207,6 @@ def login():
     if oauth.get('ok') is None:
         return basic_page('Auth failed', str(oauth))
     token = oauth['access_token']
-    load_tokens()
     client = Slacker(token)
     # TODO check exceptions
     user_info = client.auth.test().body
@@ -219,6 +218,7 @@ def login():
                                 'user': user_info['user'],
                                 'token': token})
     mongo.db.logins.create_index('token')
+    reload_tokens()
     response.set_cookie('token', token, expires=next_year)
     response.set_cookie('user', user_info['user'], expires=next_year)
     return response
@@ -230,7 +230,7 @@ def logout():
         redirect_page('https://slack.com', 'Bye'))
     year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
                              time.gmtime(time.time()-365*24*60*60))
-    mongo.db.logouts.insert_one({'_id': time.time(), 
+    mongo.db.logouts.insert_one({'_id': time.time(),
                                 'user': flask.request.cookies.get('user')})
     response.set_cookie('token', '', expires=year_ago)
     response.set_cookie('user', '', expires=year_ago)
@@ -244,7 +244,7 @@ def search():
     c = flask.request.args.get('c', '')        # context
     p = int(flask.request.args.get('p', 0))    # results page
     n = int(flask.request.args.get('n', 100))  # number of results
-    mongo.db.search.insert_one({'_id': time.time(), 
+    mongo.db.search.insert_one({'_id': time.time(),
                                 'user': flask.request.cookies.get('user'),
                                 'q': q})
     results = []
@@ -285,7 +285,7 @@ def browse():
     s = flask.request.args.get('s', '')         # stream
     p = int(flask.request.args.get('p', 0))     # results page
     n = int(flask.request.args.get('n', 1000))  # number of results
-    mongo.db.browse.insert_one({'_id': time.time(), 
+    mongo.db.browse.insert_one({'_id': time.time(),
                                 'user': flask.request.cookies.get('user'),
                                 's': s})
     results = []
@@ -297,7 +297,7 @@ def browse():
         channels = list(mongo.db.streams.find(filters[f], sort=[('name', pymongo.ASCENDING)]))
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
-        .find({'to': s}, 
+        .find({'to': s},
               sort=[('ts', pymongo.DESCENDING)],
               skip=p*n,
               limit=n)
@@ -329,7 +329,7 @@ def ts_from_message_id(msg_id):
 @app.route('/import', methods=['GET', 'POST'])
 def upload():
     # TODO check admin rights here
-    if not is_local_deploy():
+    if is_production():
         return redirect_page('/browse', 'Access denied')
     archive = flask.request.files.get('archive')
     if archive and archive.filename.endswith('.zip'):
@@ -352,7 +352,7 @@ def upload():
 def import_db():
     # TODO convert this to background task
     # TODO check admin rights here
-    if not is_local_deploy():
+    if is_production():
         return redirect_page('/browse', 'Admin rights required')
     # TODO add logging around
     with ZipFile('archive.zip') as archive:
@@ -393,16 +393,16 @@ def import_db():
             # import messages
             files = filter(lambda n: not n.endswith(os.path.sep), archive.namelist())
             # TODO check additional useful fields for these types
-            # TODO look formating at https://api.slack.com/docs/formatting/builder
+            # TODO look formatting at https://api.slack.com/docs/formatting/builder
             types_import = {
                 # useful
-                '', 'me_message', 
-                'file_share', 'file_mention', 
+                '', 'me_message',
+                'file_share', 'file_mention',
                 'reminder_add', 'reminder_delete',
-                'channel_purpose', 'channel_topic', 'channel_name', 
+                'channel_purpose', 'channel_topic', 'channel_name',
                 # useless
-                'bot_add', 'bot_remove', 
-                'channel_join', 'channel_leave', 
+                'bot_add', 'bot_remove',
+                'channel_join', 'channel_leave',
                 'channel_archive', 'channel_unarchive'}
             # format is not supported yet
             types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
@@ -449,7 +449,7 @@ def import_db():
 def redirect_to_https():
     is_http = flask.request.is_secure or \
               'http' == flask.request.headers.get('X-Forwarded-Proto')
-    if is_http and not is_local_deploy():
+    if is_http and is_production():
         url = flask.request.url.replace('http://', 'https://', 1)
         return flask.redirect(url, code=301)
 
@@ -467,29 +467,38 @@ def check_tokens():
 
 
 def fetch_messages():
-    print('fetch')
     pass  # taking items from generator here
 
 
 def setup_scheduler():
-    schedule.every(1).seconds.do(fetch_messages)
+    schedule.every(30).seconds.do(fetch_messages)
     schedule.every(12).hours.do(check_tokens)
 
 
 def background_task():
-    # minimal interval from setup_scheduler here
-    threading.Timer(1, background_task).start()
+    global bg_task
     schedule.run_pending()
+    # restart with proper interval here
+    bg_task = threading.Timer(schedule.idle_seconds(), background_task)
+    bg_task.daemon = True  # thread dies with main
+    bg_task.start()
+
+
+def background_stop():
+    global bg_task
+    bg_task.cancel()
+    bg_task.join()
 
 
 if __name__ == "__main__":
-    app.config['PREFERRED_URL_SCHEME'] = 'https'
-    load_tokens()
-    #setup_scheduler()
-    #background_task()##
-    if is_local_deploy():
-        app.run(port=8080, debug=True)
-    else:
-        app.run(host='0.0.0.0', 
-                port=int(os.environ['PORT']), 
-                debug=not is_production_deploy())
+    # skip these actions on debug wrapper
+    if is_production() or 'WERKZEUG_RUN_MAIN' in os.environ:
+        reload_tokens()
+        # scheduler in background
+        atexit.register(background_stop)
+        setup_scheduler()
+        background_task()
+
+    app.run(host='0.0.0.0' if is_production() else '127.0.0.1',
+            port=int(os.environ.get('PORT', 8080)),
+            debug=not is_production())
