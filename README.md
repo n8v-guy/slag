@@ -1,5 +1,7 @@
 # slag: Slack Archive
 
+[![Build Status](https://travis-ci.org/n8v-guy/slag.svg?branch=master)](https://travis-ci.org/n8v-guy/slag)
+
 Slag is an export files viewer for [Slack](https://slack.com), capable to look backward  
 **more than 10 000 messages back** (limit on the free [Slack plan](https://slack.com/pricing)), plus:
 * limit access only for team members
