@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# pylint: disable=fixme,missing-docstring,unused-variable,invalid-name
 
 from __future__ import print_function, division
 
@@ -12,13 +13,13 @@ import time
 from zipfile import ZipFile
 
 import flask
-import flask.ext.pymongo
+import flask_pymongo
 import pymongo
 import schedule
 from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
-import credentials  # local deploy settings
+import credentials  # pylint: disable=unused-import
 
 # TODO ask and save this after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
@@ -34,20 +35,28 @@ app = flask.Flask(__name__)
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 # TODO eliminate MongoLab mentions
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
-mongo = flask.ext.pymongo.PyMongo(app)
-tokens = tuple()
-bg_task = None
+mongo = flask_pymongo.PyMongo(app)
 
 
-def reload_tokens():
-    global tokens
-    with app.app_context():
-        tokens = tuple(mongo.db.logins.distinct('token'))
-    return tokens
+class TokenStorage(object):
+    tokens = tuple()
+
+    def __init__(self):
+        pass
+
+    def reload(self):
+        with app.app_context():
+            self.tokens = tuple(mongo.db.logins.distinct('token'))
+        return self.tokens
+
+    def tuple(self):
+        return self.tokens
+
+tokens = TokenStorage()
 
 
 def is_production():
-    return 'LOCAL' != os.environ.get('PORT', 'LOCAL')
+    return os.environ.get('PORT') is not None
 
 
 def redirect_page(url, msg):
@@ -55,7 +64,7 @@ def redirect_page(url, msg):
 
 
 def basic_page(title, html):
-    return flask.render_template('basic.htm', **locals())
+    return flask.render_template('basic.htm', title=title, html=html)
 
 
 def user_name(user):
@@ -184,7 +193,7 @@ def active_users():
                         if mail.endswith(domain):
                             user_login = mail.split('@')[0]
                     active.append(user_login)
-    return ' '.join(map(lambda u: u+'@', active))
+    return ' '.join([user+'@' for user in active])
 
 
 @app.route('/')
@@ -192,7 +201,7 @@ def active_users():
 def login():
     # if logging in is not in progress
     if not flask.request.args.get('code'):
-        if flask.request.cookies.get('token') in tokens:
+        if flask.request.cookies.get('token') in tokens.tuple():
             return flask.redirect('/browse', 302)
         return redirect_page(LOGIN_LINK, 'Auth required')
     # login part
@@ -218,7 +227,7 @@ def login():
                                 'user': user_info['user'],
                                 'token': token})
     mongo.db.logins.create_index('token')
-    reload_tokens()
+    tokens.reload()
     response.set_cookie('token', token, expires=next_year)
     response.set_cookie('user', user_info['user'], expires=next_year)
     return response
@@ -231,7 +240,7 @@ def logout():
     year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
                              time.gmtime(time.time()-365*24*60*60))
     mongo.db.logouts.insert_one({'_id': time.time(),
-                                'user': flask.request.cookies.get('user')})
+                                 'user': flask.request.cookies.get('user')})
     response.set_cookie('token', '', expires=year_ago)
     response.set_cookie('user', '', expires=year_ago)
     return response
@@ -356,6 +365,86 @@ def upload():
         '</form>')
 
 
+def import_users(archive):
+    with archive.open('users.json') as users_list:
+        users = json.loads(users_list.read())
+        bulk = mongo.db.users.initialize_ordered_bulk_op()
+        for user in users:
+            bulk.find({'_id': user['id']}).upsert().update(
+                {'$set': {'name': user['profile']['real_name'],
+                          'login': user['name'],
+                          'avatar': user['profile']['image_72']}})
+        # manual insert for slackbot user
+        bulk.find({'_id': 'USLACKBOT'}).upsert().update(
+            {'$set': {'name': 'slackbot',
+                      'login': 'slackbot',
+                      'avatar': 'https://a.slack-edge.com/'
+                                '0180/img/slackbot_72.png'}})
+        bulk.execute()
+
+
+def import_channels(channel_list):
+    channels = json.loads(channel_list.read())
+    bulk = mongo.db.streams.initialize_ordered_bulk_op()
+    for channel in channels:
+        pins = []
+        if 'pins' in channel:
+            for pin in channel['pins']:
+                msg_id = message_id(pin['id'], pin['user'])
+                pins.append(msg_id)
+        bulk.find({'_id': channel['id']}).upsert().update(
+            {'$set': {'name': channel['name'],
+                      'type': 0,  # public channel
+                      'active': not channel['is_archived'],
+                      'topic': channel['topic']['value'],
+                      'pins': pins}})
+    bulk.execute()
+    return channels
+
+
+def import_messages(channels, archive):
+    # TODO check additional useful fields for these types
+    # TODO formatting at https://api.slack.com/docs/formatting/builder
+    types_import = {
+        # useful
+        '', 'me_message',
+        'file_share', 'file_mention',
+        'reminder_add', 'reminder_delete',
+        'channel_purpose', 'channel_topic', 'channel_name',
+        # useless
+        'bot_add', 'bot_remove',
+        'channel_join', 'channel_leave',
+        'channel_archive', 'channel_unarchive'}
+    # format is not supported yet
+    types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
+    files = [n for n in archive.namelist()
+             if not n.endswith(os.path.sep)]
+    bulk = mongo.db.messages.initialize_ordered_bulk_op()
+    for channel in channels:
+        chan_id = channel['id']
+        for fname in [n for n in files
+                      if n.startswith(channel['name'] + os.path.sep)]:
+            with archive.open(fname) as day_export:
+                msgs = json.loads(day_export.read())
+                for msg in msgs:
+                    stype = msg.get('subtype', '')
+                    if stype not in types_import:
+                        if stype not in types_ignore:
+                            types_ignore.add(stype)
+                        continue
+                    msg_id = message_id(msg['ts'], msg['user'])
+                    bulk.find({'_id': msg_id}).upsert().update(
+                        {'$set': {'ts': int(msg['ts'].split('.')[0]),
+                                  # TODO: merge ts_dot and ts fields
+                                  'ts_dot': int(msg['ts']
+                                                .split('.')[1]),
+                                  'type': hash(stype),
+                                  'msg': msg['text'],
+                                  'from': msg['user'],
+                                  'to': chan_id}})
+    return bulk.execute(), types_ignore
+
+
 @app.route('/import_db')
 def import_db():
     # TODO convert this to background task
@@ -364,84 +453,12 @@ def import_db():
         return redirect_page('/browse', 'Admin rights required')
     # TODO add logging around
     with ZipFile('archive.zip') as archive:
-        # import users
-        with archive.open('users.json') as users_list:
-            users = json.loads(users_list.read())
-            bulk = mongo.db.users.initialize_ordered_bulk_op()
-            for user in users:
-                bulk.find({'_id': user['id']}).upsert().update(
-                    {'$set': {'name': user['profile']['real_name'],
-                              'login': user['name'],
-                              'avatar': user['profile']['image_72']}})
-            # manual insert for slackbot user
-            bulk.find({'_id': 'USLACKBOT'}).upsert().update(
-                {'$set': {'name': 'slackbot',
-                          'login': 'slackbot',
-                          'avatar': 'https://a.slack-edge.com/'
-                                    '0180/img/slackbot_72.png'}})
-            bulk.execute()
-
+        import_users(archive)
         # import channels
         with archive.open('channels.json') as channel_list:
-            channels = json.loads(channel_list.read())
-            bulk = mongo.db.streams.initialize_ordered_bulk_op()
-            for channel in channels:
-                pins = []
-                if 'pins' in channel:
-                    for pin in channel['pins']:
-                        msg_id = message_id(pin['id'], pin['user'])
-                        pins.append(msg_id)
-                bulk.find({'_id': channel['id']}).upsert().update(
-                    {'$set': {'name': channel['name'],
-                              'type': 0,  # public channel
-                              'active': not channel['is_archived'],
-                              'topic': channel['topic']['value'],
-                              'pins': pins}})
-            bulk.execute()
-
+            channels = import_channels(channel_list)
             # import messages
-            files = filter(lambda n: not n.endswith(os.path.sep),
-                           archive.namelist())
-            # TODO check additional useful fields for these types
-            # TODO formatting at https://api.slack.com/docs/formatting/builder
-            types_import = {
-                # useful
-                '', 'me_message',
-                'file_share', 'file_mention',
-                'reminder_add', 'reminder_delete',
-                'channel_purpose', 'channel_topic', 'channel_name',
-                # useless
-                'bot_add', 'bot_remove',
-                'channel_join', 'channel_leave',
-                'channel_archive', 'channel_unarchive'}
-            # format is not supported yet
-            types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
-            types_new = {''}
-            types = tuple(map(hash, types_import))
-            bulk = mongo.db.messages.initialize_ordered_bulk_op()
-            for channel in channels:
-                chan_name, chan_id = channel['name'], channel['id']
-                for filename in filter(lambda n: n.startswith(
-                                chan_name+os.path.sep), files):
-                    with archive.open(filename) as day_export:
-                        msgs = json.loads(day_export.read())
-                        for msg in msgs:
-                            stype = msg.get('subtype', '')
-                            if stype not in types_import:
-                                if stype not in types_ignore:
-                                    types_new.add(stype)
-                                continue
-                            msg_id = message_id(msg['ts'], msg['user'])
-                            bulk.find({'_id': msg_id}).upsert().update(
-                                {'$set': {'ts': int(msg['ts'].split('.')[0]),
-                                          # TODO: merge ts_dot and ts fields
-                                          'ts_dot': int(msg['ts']
-                                                        .split('.')[1]),
-                                          'type': types.index(hash(stype)),
-                                          'msg': msg['text'],
-                                          'from': msg['user'],
-                                          'to': chan_id}})
-            result = bulk.execute()
+            result, types_new = import_messages(channels, archive)
             mongo.db.messages.create_index('ts')
             mongo.db.messages.create_index('to')
             mongo.db.messages.create_index('type')
@@ -461,7 +478,7 @@ def import_db():
 @app.before_request
 def redirect_to_https():
     is_http = flask.request.is_secure or \
-              'http' == flask.request.headers.get('X-Forwarded-Proto')
+              flask.request.headers.get('X-Forwarded-Proto') == 'http'
     if is_http and is_production():
         url = flask.request.url.replace('http://', 'https://', 1)
         return flask.redirect(url, code=301)
@@ -469,49 +486,50 @@ def redirect_to_https():
 
 @app.before_request
 def check_auth():
-    if flask.request.cookies.get('token') not in tokens and \
+    if flask.request.cookies.get('token') not in tokens.tuple() and \
        flask.request.path not in ['/', '/login'] and \
        not os.path.isfile(os.path.join(app.static_folder,
                                        flask.request.path[1:])):
-            return redirect_page(LOGIN_LINK, 'Auth required')
+        return redirect_page(LOGIN_LINK, 'Auth required')
 
 
-def check_tokens():
-    pass
+class Scheduler(object):
+    bg_task = None
 
+    def __init__(self):
+        # scheduler in background
+        atexit.register(self.background_stop)
+        self.setup_scheduler()
+        self.background_task()
 
-def fetch_messages():
-    pass  # taking items from generator here
+    def check_tokens(self):
+        pass
 
+    def fetch_messages(self):
+        pass  # taking items from generator here
 
-def setup_scheduler():
-    schedule.every(30).seconds.do(fetch_messages)
-    schedule.every(12).hours.do(check_tokens)
+    def setup_scheduler(self):
+        schedule.every(30).seconds.do(self.fetch_messages)
+        schedule.every(12).hours.do(self.check_tokens)
 
+    def background_task(self):
+        schedule.run_pending()
+        # restart with proper interval here
+        self.bg_task = threading.Timer(schedule.idle_seconds(),
+                                       self.background_task)
+        self.bg_task.daemon = True  # thread dies with main
+        self.bg_task.start()
 
-def background_task():
-    global bg_task
-    schedule.run_pending()
-    # restart with proper interval here
-    bg_task = threading.Timer(schedule.idle_seconds(), background_task)
-    bg_task.daemon = True  # thread dies with main
-    bg_task.start()
-
-
-def background_stop():
-    global bg_task
-    bg_task.cancel()
-    bg_task.join()
+    def background_stop(self):
+        self.bg_task.cancel()
+        self.bg_task.join()
 
 
 if __name__ == "__main__":
     # skip these actions on debug wrapper
     if is_production() or 'WERKZEUG_RUN_MAIN' in os.environ:
-        reload_tokens()
-        # scheduler in background
-        atexit.register(background_stop)
-        setup_scheduler()
-        background_task()
+        bg = Scheduler()
+        tokens.reload()
 
     app.run(host='0.0.0.0' if is_production() else '127.0.0.1',
             port=int(os.environ.get('PORT', 8080)),
