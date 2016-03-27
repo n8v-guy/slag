@@ -144,7 +144,7 @@ CODE_RE = re.compile(r'\B`(.+?)`\B')
 
 def parse_msg(msg):
     # TODO move parser to separate class with tests
-    msg = msg.replace('&gt;', '>')  # yes it happens, not from user (&amp; then)
+    msg = msg.replace('&gt;', '>')  # it happens, not from user (&amp; then)
     # markup processing
     msg = markup(PREF_RE, 'pre', msg, True)
     msg = markup(CODE_RE, 'code', msg, True)
@@ -263,7 +263,8 @@ def search():
               limit=n)
     total = query.count()
     users, streams = {}, {}
-    query = sorted(tuple(query), key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
+    query = sorted(tuple(query),
+                   key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
         # resolving externals
         if res['from'] not in users:
@@ -291,10 +292,15 @@ def browse():
     results = []
     if s == '':
         f = flask.request.args.get('filter', 'active')
-        filters = {'all': {}, 'active': {'active': True}, 'archive': {'active': False}, }
+        filters = {
+            'all': {},
+            'active': {'active': True},
+            'archive': {'active': False},
+        }
         if f not in filters:
             f = 'active'
-        channels = list(mongo.db.streams.find(filters[f], sort=[('name', pymongo.ASCENDING)]))
+        channels = list(mongo.db.streams.find(
+            filters[f], sort=[('name', pymongo.ASCENDING)]))
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
         .find({'to': s},
@@ -303,7 +309,8 @@ def browse():
               limit=n)
     total = query.count()
     users, streams = {}, {}
-    query = sorted(tuple(query), key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
+    query = sorted(tuple(query),
+                   key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
         # resolving externals
         if res['from'] not in users:
@@ -335,17 +342,18 @@ def upload():
     if archive and archive.filename.endswith('.zip'):
         archive.save('archive.zip')
         return redirect_page('/import_db', archive.filename + ' saved')
-    return basic_page('Archive upload',
-                      '<form action="" method="POST" enctype="multipart/form-data">'
-                      ' <div class="input-group input-group-lg col-md-7" align="center">'
-                      '  <span class="input-group-addon">Select .zip archive</span>'
-                      '   <input type="file" name="archive" class="form-control"/>'
-                      '   <span class="input-group-btn">'
-                      '    <input type="submit" class="btn btn-primary" value="Import"/>'
-                      '   </span>'
-                      '  </span>'
-                      ' </div>'
-                      '</form>')
+    return basic_page(
+        'Archive upload',
+        '<form action="" method="POST" enctype="multipart/form-data">'
+        ' <div class="input-group input-group-lg col-md-7" align="center">'
+        '  <span class="input-group-addon">Select .zip archive</span>'
+        '   <input type="file" name="archive" class="form-control"/>'
+        '   <span class="input-group-btn">'
+        '    <input type="submit" class="btn btn-primary" value="Import"/>'
+        '   </span>'
+        '  </span>'
+        ' </div>'
+        '</form>')
 
 
 @app.route('/import_db')
@@ -369,7 +377,8 @@ def import_db():
             bulk.find({'_id': 'USLACKBOT'}).upsert().update(
                 {'$set': {'name': 'slackbot',
                           'login': 'slackbot',
-                          'avatar': 'https://a.slack-edge.com/0180/img/slackbot_72.png'}})
+                          'avatar': 'https://a.slack-edge.com/'
+                                    '0180/img/slackbot_72.png'}})
             bulk.execute()
 
         # import channels
@@ -391,9 +400,10 @@ def import_db():
             bulk.execute()
 
             # import messages
-            files = filter(lambda n: not n.endswith(os.path.sep), archive.namelist())
+            files = filter(lambda n: not n.endswith(os.path.sep),
+                           archive.namelist())
             # TODO check additional useful fields for these types
-            # TODO look formatting at https://api.slack.com/docs/formatting/builder
+            # TODO formatting at https://api.slack.com/docs/formatting/builder
             types_import = {
                 # useful
                 '', 'me_message',
@@ -411,7 +421,8 @@ def import_db():
             bulk = mongo.db.messages.initialize_ordered_bulk_op()
             for channel in channels:
                 chan_name, chan_id = channel['name'], channel['id']
-                for filename in filter(lambda n: n.startswith(chan_name+os.path.sep), files):
+                for filename in filter(lambda n: n.startswith(
+                                chan_name+os.path.sep), files):
                     with archive.open(filename) as day_export:
                         msgs = json.loads(day_export.read())
                         for msg in msgs:
@@ -423,8 +434,9 @@ def import_db():
                             msg_id = message_id(msg['ts'], msg['user'])
                             bulk.find({'_id': msg_id}).upsert().update(
                                 {'$set': {'ts': int(msg['ts'].split('.')[0]),
-                                          # TODO: place ts_dot part into 'ts' type long
-                                          'ts_dot': int(msg['ts'].split('.')[1]),
+                                          # TODO: merge ts_dot and ts fields
+                                          'ts_dot': int(msg['ts']
+                                                        .split('.')[1]),
                                           'type': types.index(hash(stype)),
                                           'msg': msg['text'],
                                           'from': msg['user'],
@@ -434,7 +446,8 @@ def import_db():
             mongo.db.messages.create_index('to')
             mongo.db.messages.create_index('type')
             mongo.db.messages.create_index('from')
-            mongo.db.messages.create_index([('msg', 'text')], default_language='ru')
+            mongo.db.messages.create_index([('msg', 'text')],
+                                           default_language='ru')
     skip_fields = ['upserted', 'modified', 'matched', 'removed', 'inserted']
     for field in skip_fields:
         result.pop(field, None)
@@ -458,7 +471,8 @@ def redirect_to_https():
 def check_auth():
     if flask.request.cookies.get('token') not in tokens and \
        flask.request.path not in ['/', '/login'] and \
-       not os.path.isfile(os.path.join(app.static_folder, flask.request.path[1:])):
+       not os.path.isfile(os.path.join(app.static_folder,
+                                       flask.request.path[1:])):
             return redirect_page(LOGIN_LINK, 'Auth required')
 
 
