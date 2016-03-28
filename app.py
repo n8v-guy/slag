@@ -19,7 +19,7 @@ import schedule
 from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
-import credentials  # pylint: disable=unused-import
+import credentials  # noqa # pylint: disable=unused-import
 
 # TODO ask and save this after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
