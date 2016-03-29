@@ -143,12 +143,15 @@ def restore_html(m):
 
 HTML_RE = re.compile(r'\|\|\[(.+?)\]\|\|', re.MULTILINE | re.DOTALL)
 LINK_RE = re.compile(r'\B<([^|>]+)\|?([^|>]+)?>\B')
-QUOT_RE = re.compile(r'^>(.+?)$', re.MULTILINE)
 BOLD_RE = re.compile(r'\B\*(.+?)\*\B')
 ITAL_RE = re.compile(r'\b_(.+?)_\b')
 STRK_RE = re.compile(r'\B~(.+?)~\B')
-PREF_RE = re.compile(r'\B```(.+?)```\B', re.MULTILINE | re.DOTALL)
+PREF_RE = re.compile(r'\B```(.+?)```\B[\n]?', re.MULTILINE | re.DOTALL)
 CODE_RE = re.compile(r'\B`(.+?)`\B')
+QUOT_RE = re.compile(r'^>(.+?)$[\n]?', re.MULTILINE)
+LNGQ_RE = re.compile(r'>>>(.+)', re.MULTILINE | re.DOTALL)
+MULQ_RE = re.compile(re.escape(wrap_html('</blockquote>')) +
+                     re.escape(wrap_html('<blockquote>')), re.MULTILINE)
 
 
 def parse_msg(msg):
@@ -156,8 +159,10 @@ def parse_msg(msg):
     msg = msg.replace('&gt;', '>')  # it happens, not from user (&amp; then)
     # markup processing
     msg = markup(PREF_RE, 'pre', msg, True)
-    msg = markup(CODE_RE, 'code', msg, True)
+    msg = markup(LNGQ_RE, 'blockquote', msg)
     msg = markup(QUOT_RE, 'blockquote', msg)
+    msg = re.sub(MULQ_RE, wrap_html('<br/>'), msg)
+    msg = markup(CODE_RE, 'code', msg, True)
     msg = markup(STRK_RE, 'strike', msg)
     msg = markup(BOLD_RE, 'b', msg)
     msg = markup(ITAL_RE, 'i', msg)
