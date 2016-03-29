@@ -14,4 +14,4 @@ install:
   - pip install flake8 pylint
 
 script:
- - ./.precommit.sh
+ - ./.pre-commit
