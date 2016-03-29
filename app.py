@@ -21,15 +21,18 @@ from slacker import Slacker, Error
 # noinspection PyUnresolvedReferences
 import credentials  # noqa # pylint: disable=unused-import
 
-# TODO ask and save this after app deploy
+# TODO ask and save these after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
 SLACK_CLIENT_ID = '6154181110.20526331843'
+BASIC_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
+              '&client_id=' + SLACK_CLIENT_ID + '&scope=team:read,' +
+              'users:read,channels:read,channels:history,pins:read,emoji:read')
 LOGIN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               '&client_id=' + SLACK_CLIENT_ID + '&scope=identify')
 TOKEN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               '&client_id=' + SLACK_CLIENT_ID + '&scope=identify,' +
-              'channels:history,channels:read,files:read,'
-              'groups:history,groups:read,im:history,im:read,users:read')
+              'files:read,stars:read,groups:history,groups:read,'
+              'im:history,im:read,mpim:read,mpim:history')
 
 app = flask.Flask(__name__)
 app.config['PREFERRED_URL_SCHEME'] = 'https'
@@ -202,13 +205,33 @@ def active_users():
 
 
 @app.route('/')
+def index():
+    if flask.request.cookies.get('token') in tokens.tuple():
+        return flask.redirect('/browse', 302)
+    return basic_page(
+        'Login',
+        '<div class="jumbotron" align="center">'
+        '  <h1>You have to authenticate first:</h1>'
+        '  <a class="btn btn-default btn-lg" href="{}">'
+        '    <img src="https://slack.com/favicon.ico" width="24"/>'
+        '    Basic (public channels)'
+        '  </a>'
+        '  &nbsp;'
+        '  <a class="btn btn-default btn-lg" href="{}">'
+        '    <img src="https://slack.com/favicon.ico" width="24"/>'
+        '    Advanced (import private messaging)'
+        '  </a>'
+        '</div>'.format(LOGIN_LINK, TOKEN_LINK)
+    )
+
+
 @app.route('/login')
 def login():
     # if logging in is not in progress
     if not flask.request.args.get('code'):
         if flask.request.cookies.get('token') in tokens.tuple():
             return flask.redirect('/browse', 302)
-        return redirect_page(LOGIN_LINK, 'Auth required')
+        return redirect_page('/', 'Auth required')
     # login part
     try:
         oauth = Slacker.oauth.access(
@@ -495,7 +518,7 @@ def check_auth():
        flask.request.path not in ['/', '/login'] and \
        not os.path.isfile(os.path.join(app.static_folder,
                                        flask.request.path[1:])):
-        return redirect_page(LOGIN_LINK, 'Auth required')
+        return redirect_page('/', 'Auth required')
 
 
 class Scheduler(object):
