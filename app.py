@@ -30,9 +30,9 @@ BASIC_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
 LOGIN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               '&client_id=' + SLACK_CLIENT_ID + '&scope=identify')
 TOKEN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
-              '&client_id=' + SLACK_CLIENT_ID + '&scope=identify,' +
-              'files:read,stars:read,groups:history,groups:read,'
-              'im:history,im:read,mpim:read,mpim:history')
+              '&client_id=' + SLACK_CLIENT_ID + '&scope=identify,files:read,' +
+              'channels:read,channels:history,groups:history,groups:read,'
+              'im:history,im:read,mpim:read,mpim:history,stars:read')
 
 app = flask.Flask(__name__)
 app.config['PREFERRED_URL_SCHEME'] = 'https'
@@ -208,6 +208,7 @@ def active_users():
 def index():
     if flask.request.cookies.get('token') in tokens.tuple():
         return flask.redirect('/browse', 302)
+    auth = '&redirect_uri='+flask.url_for('login', _external=True)
     return basic_page(
         'Login',
         '<div class="jumbotron" align="center">'
@@ -221,7 +222,7 @@ def index():
         '    <img src="https://slack.com/favicon.ico" width="24"/>'
         '    Advanced (import private messaging)'
         '  </a>'
-        '</div>'.format(LOGIN_LINK, TOKEN_LINK)
+        '</div>'.format(LOGIN_LINK+auth, TOKEN_LINK+auth)
     )
 
 
@@ -237,7 +238,9 @@ def login():
         oauth = Slacker.oauth.access(
             client_id=SLACK_CLIENT_ID,
             client_secret=os.environ['SLACK_SECRET'],
-            code=flask.request.args['code']).body
+            code=flask.request.args['code'],
+            redirect_uri=flask.url_for('login', _external=True)
+        ).body
     except Error:
         oauth = {}
     # TODO check if our team selected
@@ -253,7 +256,8 @@ def login():
                               time.gmtime(time.time()+365*24*60*60))
     mongo.db.logins.insert_one({'_id': time.time(),
                                 'user': user_info['user'],
-                                'token': token})
+                                'token': token,
+                                'scope': oauth['scope'].split(',')})
     mongo.db.logins.create_index('token')
     tokens.reload()
     response.set_cookie('token', token, expires=next_year)
