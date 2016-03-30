@@ -35,7 +35,6 @@ TOKEN_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               'im:history,im:read,mpim:read,mpim:history,stars:read')
 
 app = flask.Flask(__name__)
-app.config['PREFERRED_URL_SCHEME'] = 'https'
 # TODO eliminate MongoLab mentions
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 mongo = flask_pymongo.PyMongo(app)
@@ -59,7 +58,14 @@ tokens = TokenStorage()
 
 
 def is_production():
-    return os.environ.get('PORT') is not None
+    return __name__ == 'app'
+
+
+def url_for(endpoint):
+    url = flask.url_for(endpoint, _external=True)
+    if is_production():
+        url = url.replace('http://', 'https://', 1)
+    return url
 
 
 def redirect_page(url, msg):
@@ -208,7 +214,9 @@ def active_users():
 def index():
     if flask.request.cookies.get('token') in tokens.tuple():
         return flask.redirect('/browse', 302)
-    auth = '&redirect_uri='+flask.url_for('login', _external=True)
+    auth = '&redirect_uri='+url_for('login')
+    if is_production():
+        auth = auth.replace('http://', 'https://', 1)
     return basic_page(
         'Login',
         '<div class="jumbotron" align="center">'
@@ -239,7 +247,7 @@ def login():
             client_id=SLACK_CLIENT_ID,
             client_secret=os.environ['SLACK_SECRET'],
             code=flask.request.args['code'],
-            redirect_uri=flask.url_for('login', _external=True)
+            redirect_uri=url_for('login')
         ).body
     except Error:
         oauth = {}
@@ -557,12 +565,15 @@ class Scheduler(object):
         self.bg_task.join()
 
 
-if __name__ == "__main__":
-    # skip these actions on debug wrapper
-    if is_production() or 'WERKZEUG_RUN_MAIN' in os.environ:
-        bg = Scheduler()
-        tokens.reload()
+def init_app():
+    Scheduler()
+    tokens.reload()
 
-    app.run(host='0.0.0.0' if is_production() else '127.0.0.1',
-            port=int(os.environ.get('PORT', 8080)),
-            debug=not is_production())
+
+if __name__ == "__main__":  # debug branch here
+    # only for working child process (debug hierarchy)
+    if 'WERKZEUG_RUN_MAIN' in os.environ:
+        init_app()
+    app.run(host='127.0.0.1', port=8080, debug=True)
+else:  # __name__ == 'app' for gunicorn production
+    init_app()
