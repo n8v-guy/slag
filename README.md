@@ -1,5 +1,7 @@
 # slag: Slack Archive
 
+[![Join the chat at https://gitter.im/n8v-guy/slag](https://badges.gitter.im/n8v-guy/slag.svg)](https://gitter.im/n8v-guy/slag?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 [![Build Status](https://travis-ci.org/n8v-guy/slag.svg?branch=master)](https://travis-ci.org/n8v-guy/slag)
 [![Code Health](https://landscape.io/github/n8v-guy/slag/master/landscape.svg?style=flat)](https://landscape.io/github/n8v-guy/slag/master)
 
