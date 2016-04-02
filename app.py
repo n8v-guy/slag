@@ -20,6 +20,8 @@ from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
 import credentials  # noqa # pylint: disable=unused-import
+import crypto_util
+import mongo_store
 
 # TODO ask and save these after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
@@ -570,7 +572,29 @@ def init_app():
     tokens.reload()
 
 
+def encrypt_tokens():
+    with app.app_context():
+        all_tokens = tuple(mongo.db.logins.distinct('token'))
+        cipher = crypto_util.AESCipher(os.environ['CRYPTO_KEY'])
+        token_store = mongo_store.MongoStore(mongo.db.tokens)
+        timestamp = time.time()
+        for token in all_tokens:
+            try:
+                user = Slacker(token).auth.test().body
+            except Error as error:
+                print('Token {} problem: {}'.format(token, error))
+                continue
+            encrypted_token = cipher.encrypt(token)
+            token_store[encrypted_token] = {
+                'user': user['user_id'],
+                'last_check': timestamp,
+                'full_access': False,  # extended scope
+                'login': user['user']  # duplicate field for debug purpose
+            }
+
+
 if __name__ == "__main__":  # debug branch here
+    encrypt_tokens()
     # only for working child process (debug hierarchy)
     if 'WERKZEUG_RUN_MAIN' in os.environ:
         init_app()
