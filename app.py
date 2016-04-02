@@ -7,7 +7,6 @@ from __future__ import print_function, division
 import atexit
 import json
 import os
-import re
 import threading
 import time
 from zipfile import ZipFile
@@ -20,6 +19,7 @@ from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
 import credentials  # noqa # pylint: disable=unused-import
+import markup_util
 import mongo_store
 import store_util
 
@@ -64,114 +64,6 @@ def redirect_page(url, msg):
 
 def basic_page(title, html):
     return flask.render_template('basic.htm', title=title, html=html)
-
-
-def user_name(user):
-    return '@'+people[user[1:]]['login']
-
-
-def stream_name(stream):
-    return '#'+streams[stream[1:]]['name']
-
-
-def parse_link(m):
-    def link_page(url, title):
-        if not title:
-            title = url
-        return wrap_html('<a href="'+url+'">'+title+'</a>')
-
-    def link_user(user):
-        return link_page('javascript:void(0)', user_name(user))
-
-    def link_stream(stream):
-        return link_page('javascript:void(0)', stream_name(stream))
-
-    target = m.group(1)
-    label = m.group(2)
-    if target.startswith('@'):
-        return link_user(target)
-    if target.startswith('#'):
-        return link_stream(target)
-    if target.startswith('!'):
-        return link_page('javascript:void(0)', '@'+target[1:])
-    if target.startswith('http://') or \
-       target.startswith('https://') or \
-       target.startswith('mailto:'):
-        return link_page(target, label)
-    return m.group(0)
-
-
-def wrap_html(text):
-    return '||['+text+']||'
-
-
-def re_iter(regexp, replace, s):
-    cur, diff = 0, 0
-    s_copy = s
-    for res in HTML_RE.finditer(s_copy):
-        l, h = res.start(), res.end()
-        prev = s[cur:diff+l]
-        part = re.sub(regexp, replace, prev)
-        s = s[:cur] + part + s[diff+l:]
-        diff += len(part)-len(prev)
-        cur += len(part) + (h-l)
-    return s[:cur] + re.sub(regexp, replace, s[cur:])
-
-
-def markup(regexp, tag, s, code=False):
-    def wrap_all(m):
-        return wrap_html('<'+tag+'>'+raw_text(m.group(1))+'</'+tag+'>')
-
-    def wrap_tags(m):
-        return wrap_html('<'+tag+'>')+m.group(1)+wrap_html('</'+tag+'>')
-
-    return re_iter(regexp, wrap_all if code else wrap_tags, s)
-
-
-def raw_text(s):
-    return s.replace('<', '&#60;')
-
-
-def use_entities(s):
-    return s.replace('<', '&lt;').replace('>', '&gt;')
-
-
-def restore_html(m):
-    return m.group(1).replace('&lt;', '<').replace('&gt;', '>')
-
-
-HTML_RE = re.compile(r'\|\|\[(.+?)\]\|\|', re.MULTILINE | re.DOTALL)
-LINK_RE = re.compile(r'\B<([^|>]+)\|?([^|>]+)?>\B')
-BOLD_RE = re.compile(r'\B\*(.+?)\*\B')
-ITAL_RE = re.compile(r'\b_(.+?)_\b')
-STRK_RE = re.compile(r'\B~(.+?)~\B')
-PREF_RE = re.compile(r'\B```(.+?)```\B[\n]?', re.MULTILINE | re.DOTALL)
-CODE_RE = re.compile(r'\B`(.+?)`\B')
-QUOT_RE = re.compile(r'^>(.+?)$[\n]?', re.MULTILINE)
-LNGQ_RE = re.compile(r'>>>(.+)', re.MULTILINE | re.DOTALL)
-MULQ_RE = re.compile(re.escape(wrap_html('</blockquote>')) +
-                     re.escape(wrap_html('<blockquote>')), re.MULTILINE)
-
-
-def parse_msg(msg):
-    # TODO move parser to separate class with tests
-    msg = msg.replace('&gt;', '>')  # it happens, not from user (&amp; then)
-    # markup processing
-    msg = markup(PREF_RE, 'pre', msg, True)
-    msg = markup(LNGQ_RE, 'blockquote', msg)
-    msg = markup(QUOT_RE, 'blockquote', msg)
-    msg = re.sub(MULQ_RE, wrap_html('<br/>'), msg)
-    msg = markup(CODE_RE, 'code', msg, True)
-    msg = markup(STRK_RE, 'strike', msg)
-    msg = markup(BOLD_RE, 'b', msg)
-    msg = markup(ITAL_RE, 'i', msg)
-    msg = re_iter(LINK_RE, parse_link, msg)
-    # apply entities for sources
-    msg = use_entities(msg)
-    # restore markup
-    msg = re.sub(HTML_RE, restore_html, msg)
-    msg = msg.replace('\n', '<br/>')
-    return flask.Markup(msg)
 
 
 @app.route('/<path:filename>')
@@ -305,7 +197,8 @@ def search():
         res['ctx'] = message_id(str(res['ts'])+'.'+str(res['ts_dot']),
                                 res['from']['_id'])
         res['ts'] = time.ctime(res['ts'])
-        res['msg'] = parse_msg(res['msg'])
+        res['msg'] = flask.Markup(
+            markup_util.Markup(res['msg'], people, streams))
         results.append(res)
     return flask.render_template('search.htm', **locals())
 
@@ -340,10 +233,12 @@ def browse():
     query = sorted(tuple(query),
                    key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
+        # TODO optimize MongoStore class to save '_id' field in values
         res['from'] = people.get_row(res['from'])
         res['to'] = streams.get_row(res['to'])
         res['ts'] = time.ctime(res['ts'])
-        res['msg'] = parse_msg(res['msg'])
+        res['msg'] = flask.Markup(
+            markup_util.Markup(res['msg'], people, streams))
         results.append(res)
     return flask.render_template('stream.htm', **locals())
 
