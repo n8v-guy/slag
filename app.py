@@ -20,8 +20,7 @@ from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
 import credentials  # noqa # pylint: disable=unused-import
-import crypto_util
-import mongo_store
+import store_util
 
 # TODO ask and save these after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
@@ -40,23 +39,10 @@ app = flask.Flask(__name__)
 # TODO eliminate MongoLab mentions
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 mongo = flask_pymongo.PyMongo(app)
-
-
-class TokenStorage(object):
-    tokens = tuple()
-
-    def __init__(self):
-        pass
-
-    def reload(self):
-        with app.app_context():
-            self.tokens = tuple(mongo.db.logins.distinct('token'))
-        return self.tokens
-
-    def tuple(self):
-        return self.tokens
-
-tokens = TokenStorage()
+with app.app_context() as ctx:
+    tokens = store_util.TokenStore(mongo.db.tokens,
+                                   context=ctx,
+                                   key=os.environ['CRYPTO_KEY'])
 
 
 def is_production():
@@ -214,7 +200,7 @@ def active_users():
 
 @app.route('/')
 def index():
-    if flask.request.cookies.get('token') in tokens.tuple():
+    if tokens.is_known_token(flask.request.cookies.get('token')):
         return flask.redirect('/browse', 302)
     auth = '&redirect_uri='+url_for('login')
     if is_production():
@@ -240,7 +226,7 @@ def index():
 def login():
     # if logging in is not in progress
     if not flask.request.args.get('code'):
-        if flask.request.cookies.get('token') in tokens.tuple():
+        if tokens.is_known_token(flask.request.cookies.get('token')):
             return flask.redirect('/browse', 302)
         return redirect_page('/', 'Auth required')
     # login part
@@ -264,12 +250,8 @@ def login():
         redirect_page('/browse', 'Auth success'))
     next_year = time.strftime("%a, %d-%b-%Y %T GMT",
                               time.gmtime(time.time()+365*24*60*60))
-    mongo.db.logins.insert_one({'_id': time.time(),
-                                'user': user_info['user'],
-                                'token': token,
-                                'scope': oauth['scope'].split(',')})
-    mongo.db.logins.create_index('token')
-    tokens.reload()
+    scope = oauth['scope'].split(',')
+    tokens.upsert(token, user=user_info, full_access=len(scope) > 1)
     response.set_cookie('token', token, expires=next_year)
     response.set_cookie('user', user_info['user'], expires=next_year)
     return response
@@ -528,7 +510,7 @@ def redirect_to_https():
 
 @app.before_request
 def check_auth():
-    if flask.request.cookies.get('token') not in tokens.tuple() and \
+    if not tokens.is_known_token(flask.request.cookies.get('token')) and \
        flask.request.path not in ['/', '/login'] and \
        not os.path.isfile(os.path.join(app.static_folder,
                                        flask.request.path[1:])):
@@ -569,32 +551,9 @@ class Scheduler(object):
 
 def init_app():
     Scheduler()
-    tokens.reload()
-
-
-def encrypt_tokens():
-    with app.app_context():
-        all_tokens = tuple(mongo.db.logins.distinct('token'))
-        cipher = crypto_util.AESCipher(os.environ['CRYPTO_KEY'])
-        token_store = mongo_store.MongoStore(mongo.db.tokens)
-        timestamp = time.time()
-        for token in all_tokens:
-            try:
-                user = Slacker(token).auth.test().body
-            except Error as error:
-                print('Token {} problem: {}'.format(token, error))
-                continue
-            encrypted_token = cipher.encrypt(token)
-            token_store[encrypted_token] = {
-                'user': user['user_id'],
-                'last_check': timestamp,
-                'full_access': False,  # extended scope
-                'login': user['user']  # duplicate field for debug purpose
-            }
 
 
 if __name__ == "__main__":  # debug branch here
-    encrypt_tokens()
     # only for working child process (debug hierarchy)
     if 'WERKZEUG_RUN_MAIN' in os.environ:
         init_app()
