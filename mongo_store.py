@@ -58,6 +58,12 @@ class MongoStore(collections.MutableMapping):
         """read value by key from collection"""
         return self._store[key]
 
+    def get_row(self, key):
+        """read row by key from collection"""
+        row = dict(self._store[key])
+        row.update({PRIMARY_KEY: key})
+        return row
+
     def __len__(self):
         """getting row count of collection"""
         return len(self._store)

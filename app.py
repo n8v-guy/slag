@@ -20,6 +20,7 @@ from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
 import credentials  # noqa # pylint: disable=unused-import
+import mongo_store
 import store_util
 
 # TODO ask and save these after app deploy
@@ -40,9 +41,10 @@ app = flask.Flask(__name__)
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 mongo = flask_pymongo.PyMongo(app)
 with app.app_context() as ctx:
-    tokens = store_util.TokenStore(mongo.db.tokens,
-                                   context=ctx,
+    tokens = store_util.TokenStore(mongo.db.tokens, ctx,
                                    key=os.environ['CRYPTO_KEY'])
+    people = mongo_store.MongoStore(mongo.db.users, ctx)
+    streams = mongo_store.MongoStore(mongo.db.streams, ctx)
 
 
 def is_production():
@@ -65,11 +67,11 @@ def basic_page(title, html):
 
 
 def user_name(user):
-    return '@'+mongo.db.users.find_one(user[1:])['login']
+    return '@'+people[user[1:]]['login']
 
 
 def stream_name(stream):
-    return '#'+mongo.db.streams.find_one(stream[1:])['name']
+    return '#'+streams[stream[1:]]['name']
 
 
 def parse_link(m):
@@ -295,17 +297,11 @@ def search():
               skip=p*n,
               limit=n)
     total = query.count()
-    users, streams = {}, {}
     query = sorted(tuple(query),
                    key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
-        # resolving externals
-        if res['from'] not in users:
-            users[res['from']] = mongo.db.users.find_one(res['from'])
-        if res['to'] not in streams:
-            streams[res['to']] = mongo.db.streams.find_one(res['to'])
-        res['from'] = users[res['from']]
-        res['to'] = streams[res['to']]
+        res['from'] = people.get_row(res['from'])
+        res['to'] = streams.get_row(res['to'])
         res['ctx'] = message_id(str(res['ts'])+'.'+str(res['ts_dot']),
                                 res['from']['_id'])
         res['ts'] = time.ctime(res['ts'])
@@ -341,17 +337,11 @@ def browse():
               skip=p*n,
               limit=n)
     total = query.count()
-    users, streams = {}, {}
     query = sorted(tuple(query),
                    key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
-        # resolving externals
-        if res['from'] not in users:
-            users[res['from']] = mongo.db.users.find_one(res['from'])
-        if res['to'] not in streams:
-            streams[res['to']] = mongo.db.streams.find_one(res['to'])
-        res['from'] = users[res['from']]
-        res['to'] = streams[res['to']]
+        res['from'] = people.get_row(res['from'])
+        res['to'] = streams.get_row(res['to'])
         res['ts'] = time.ctime(res['ts'])
         res['msg'] = parse_msg(res['msg'])
         results.append(res)
