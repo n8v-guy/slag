@@ -1,6 +1,6 @@
 """Utils to work with mongodb memory-cached collections"""
 import time
-import crypto_util
+import crypto
 import mongo_store
 
 
@@ -9,7 +9,7 @@ class TokenStore(mongo_store.MongoStore):
 
     def __init__(self, collection, context, key):
         super(TokenStore, self).__init__(collection, context)
-        self._cipher = crypto_util.AESCipher(key)
+        self._cipher = crypto.AESCipher(key)
         self._tokens = {self._cipher.decrypt(enc): enc for enc in self.keys()}
 
     @staticmethod

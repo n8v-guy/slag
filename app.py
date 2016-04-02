@@ -19,9 +19,9 @@ from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
 import credentials  # noqa # pylint: disable=unused-import
-import markup_util
+import markup
 import mongo_store
-import store_util
+import store
 
 # TODO ask and save these after app deploy
 SLACK_TEAM_ID = 'T064J5B38'
@@ -41,8 +41,8 @@ app = flask.Flask(__name__)
 app.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
 mongo = flask_pymongo.PyMongo(app)
 with app.app_context() as ctx:
-    tokens = store_util.TokenStore(mongo.db.tokens, ctx,
-                                   key=os.environ['CRYPTO_KEY'])
+    tokens = store.TokenStore(mongo.db.tokens, ctx,
+                              key=os.environ['CRYPTO_KEY'])
     people = mongo_store.MongoStore(mongo.db.users, ctx)
     streams = mongo_store.MongoStore(mongo.db.streams, ctx)
 
@@ -198,7 +198,7 @@ def search():
                                 res['from']['_id'])
         res['ts'] = time.ctime(res['ts'])
         res['msg'] = flask.Markup(
-            markup_util.Markup(res['msg'], people, streams))
+            markup.Markup(res['msg'], people, streams))
         results.append(res)
     return flask.render_template('search.htm', **locals())
 
@@ -238,7 +238,7 @@ def browse():
         res['to'] = streams.get_row(res['to'])
         res['ts'] = time.ctime(res['ts'])
         res['msg'] = flask.Markup(
-            markup_util.Markup(res['msg'], people, streams))
+            markup.Markup(res['msg'], people, streams))
         results.append(res)
     return flask.render_template('stream.htm', **locals())
 
