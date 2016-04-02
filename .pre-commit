@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # install by this command: ln -s -f $(pwd)/.pre-commit .git/hooks/pre-commit
+echo [git st]
+git status --porcelain 2>&1 | grep -oE '^\?\?' 1>&2
+git_st=$?
 echo [flake8]
-find . -maxdepth 1 -name \*.py -exec flake8 --max-complexity 9 {} \; 2>&1 | grep -E '^\./.+' 1>&2
-flake=$?
+find . -maxdepth 1 -name \*.py -exec flake8 --max-complexity 9 {} \; 2>&1 | grep -E '^\./' 1>&2
+flake8=$?
 echo [pylint]
-find . -maxdepth 1 -name \*.py -exec pylint --disable=I --msg-template='./{path}:{line}:{column}: {msg_id} {msg} ({symbol})' {} \; 2>&1 | grep -E '^\./.+' 1>&2
+find . -maxdepth 1 -name \*.py -exec pylint --disable=I --msg-template='./{path}:{line}:{column}: {msg_id} {msg} ({symbol})' {} \; 2>&1 | grep -E '^\./' 1>&2
 pylint=$?
 # "1" for grep's "not found"
-if [ $flake -ne 1 ] || [ $pylint -ne 1 ]; then
+if [ $flake8 -ne 1 ] || [ $pylint -ne 1 ] || [ $git_st -ne 1 ]; then
 echo [FAILED]
   exit 1
 fi
