@@ -157,8 +157,8 @@ def logout():
         redirect_page('https://slack.com', 'Bye'))
     year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
                              time.gmtime(time.time()-365*24*60*60))
-    mongo.db.logouts.insert_one({'_id': time.time(),
-                                 'user': flask.request.cookies.get('user')})
+    mongo.db.z_logouts.insert_one({'_id': time.time(),
+                                   'user': flask.request.cookies.get('user')})
     response.set_cookie('token', '', expires=year_ago)
     response.set_cookie('user', '', expires=year_ago)
     return response
@@ -171,9 +171,9 @@ def search():
     c = flask.request.args.get('c', '')        # context
     p = int(flask.request.args.get('p', 0))    # results page
     n = int(flask.request.args.get('n', 100))  # number of results
-    mongo.db.search.insert_one({'_id': time.time(),
-                                'user': flask.request.cookies.get('user'),
-                                'q': q})
+    mongo.db.z_search.insert_one({'_id': time.time(),
+                                  'user': flask.request.cookies.get('user'),
+                                  'q': q})
     results = []
     if q == '':
         return flask.render_template('search.htm', **locals())
@@ -205,9 +205,9 @@ def browse():
     s = flask.request.args.get('s', '')         # stream
     p = int(flask.request.args.get('p', 0))     # results page
     n = int(flask.request.args.get('n', 1000))  # number of results
-    mongo.db.browse.insert_one({'_id': time.time(),
-                                'user': flask.request.cookies.get('user'),
-                                's': s})
+    mongo.db.z_browse.insert_one({'_id': time.time(),
+                                  'user': flask.request.cookies.get('user'),
+                                  's': s})
     results = []
     if s == '':
         f = flask.request.args.get('filter', 'active')
