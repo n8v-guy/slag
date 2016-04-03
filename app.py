@@ -179,7 +179,7 @@ def search():
         return flask.render_template('search.htm', **locals())
     condition = {'$text': {'$search': q}}
     if c != '':
-        ts = ts_from_message_id(c)
+        ts = ts_from_message_uid(c)
         condition = {'ts': {'$lt': ts+60*60, '$gt': ts-60*60}, 'to': s}
     elif s != '':
         condition = {'$text': {'$search': q}, 'to': s}
@@ -189,13 +189,10 @@ def search():
               skip=p*n,
               limit=n)
     total = query.count()
-    query = sorted(tuple(query),
-                   key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
         res['from'] = people.get_row(res['from'])
         res['to'] = streams.get_row(res['to'])
-        res['ctx'] = message_id(str(res['ts'])+'.'+str(res['ts_dot']),
-                                res['from']['_id'])
+        res['ctx'] = message_uid(res['from']['_id'], str(res['ts']))
         res['ts'] = time.ctime(res['ts'])
         res['msg'] = flask.Markup(
             markup.Markup(res['msg'], people, streams))
@@ -230,8 +227,6 @@ def browse():
               skip=p*n,
               limit=n)
     total = query.count()
-    query = sorted(tuple(query),
-                   key=lambda r: (r['ts'], r['ts_dot']), reverse=True)
     for res in query:
         # TODO optimize MongoStore class to save '_id' field in values
         res['from'] = people.get_row(res['from'])
@@ -243,12 +238,13 @@ def browse():
     return flask.render_template('stream.htm', **locals())
 
 
-def message_id(timestamp, user):
-    return timestamp + '/' + user
+def message_uid(stream, timestamp):
+    return stream + '_' + timestamp
 
 
-def ts_from_message_id(msg_id):
-    return int(msg_id.split('/')[0].split('.')[0])
+def ts_from_message_uid(msg_uid):
+    print(msg_uid)
+    return float(msg_uid.split('_')[1])
 
 
 @app.route('/import', methods=['GET', 'POST'])
@@ -299,13 +295,14 @@ def import_channels(channel_list):
         pins = []
         if 'pins' in channel:
             for pin in channel['pins']:
-                msg_id = message_id(pin['id'], pin['user'])
-                pins.append(msg_id)
+                msg_uid = message_uid(channel['id'], pin['id'])
+                pins.append(msg_uid)
         bulk.find({'_id': channel['id']}).upsert().update(
             {'$set': {'name': channel['name'],
                       'type': 0,  # public channel
                       'active': not channel['is_archived'],
                       'topic': channel['topic']['value'],
+                      'purpose': channel['purpose']['value'],
                       'pins': pins}})
     bulk.execute()
     return channels
@@ -341,12 +338,9 @@ def import_messages(channels, archive):
                         if stype not in types_ignore:
                             types_ignore.add(stype)
                         continue
-                    msg_id = message_id(msg['ts'], msg['user'])
+                    msg_id = message_uid(channel['id'], msg['ts'])
                     bulk.find({'_id': msg_id}).upsert().update(
-                        {'$set': {'ts': int(msg['ts'].split('.')[0]),
-                                  # TODO: merge ts_dot and ts fields
-                                  'ts_dot': int(msg['ts']
-                                                .split('.')[1]),
+                        {'$set': {'ts': float(msg['ts']),
                                   'type': hash(stype),
                                   'msg': msg['text'],
                                   'from': msg['user'],
@@ -377,7 +371,6 @@ def import_db():
     skip_fields = ['upserted', 'modified', 'matched', 'removed', 'inserted']
     for field in skip_fields:
         result.pop(field, None)
-    # TODO Check why 'nModified' is always appears in result (duplicates?)
     return basic_page('Archive import complete',
                       'Import complete!<br />' +
                       str(result) + '<br/>' +
