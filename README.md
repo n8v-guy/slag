@@ -1,7 +1,10 @@
 # slag: Slack Archive
 
-[![Build Status](https://travis-ci.org/n8v-guy/slag.svg?branch=master)](https://travis-ci.org/n8v-guy/slag)
+[![MIT Licese](https://img.shields.io/github/license/n8v-guy/slag.svg)](https://github.com/n8v-guy/slag/blob/master/LICENSE)
+[![Build Status](https://img.shields.io/travis/n8v-guy/slag.svg)](https://travis-ci.org/n8v-guy/slag)
 [![Code Health](https://landscape.io/github/n8v-guy/slag/master/landscape.svg?style=flat)](https://landscape.io/github/n8v-guy/slag/master)
+[![Your feedback is greatly appreciated](https://img.shields.io/maintenance/yes/2016.svg)](https://github.com/n8v-guy/slag/issues/new)
+[![Kanban board @ waffle.io](https://img.shields.io/github/issues-raw/n8v-guy/slag.svg)](https://waffle.io/n8v-guy/slag)
 
 Slag is an export files viewer for [Slack](https://slack.com), capable to look backward  
 **more than 10 000 messages back** (limit on the free [Slack plan](https://slack.com/pricing)), plus:
