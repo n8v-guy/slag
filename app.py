@@ -420,18 +420,17 @@ class Scheduler(object):
     @staticmethod
     def check_tokens():
         print('Checking tokens here')
-        for token, enc_key in tokens.decrypt_keys_map().iteritems():
+        for token, enc_key in tokens.decrypt_keys_map().items():
+            time.sleep(1)
             print('Check token', token)
             try:
                 user_info = Slacker(token).auth.test().body
             except Error as err:
                 print('Error for this token:', err)
                 del tokens[enc_key]
-                yield
                 continue
             print('Valid token')
             tokens.upsert(token, user_info)
-            yield
 
     def fetch_messages(self):
         pass  # taking items from generator here
