@@ -66,6 +66,12 @@ def basic_page(title, html):
     return flask.render_template('basic.htm', title=title, html=html)
 
 
+def cookies_expire_date():
+    """:returns: now plus one year date in cookie-expected time format"""
+    return time.strftime("%a, %d-%b-%Y %T GMT",
+                         time.gmtime(time.time() + 365 * 24 * 60 * 60))
+
+
 @app.route('/<path:filename>')
 def send_file(filename):
     return flask.send_from_directory(app.static_folder, filename)
@@ -94,35 +100,31 @@ def active_users():
 
 @app.route('/')
 def index():
-    if tokens.is_known_token(flask.request.cookies.get('token')):
+    if tokens.is_known_user(flask.request.cookies.get('auth')):
         return flask.redirect('/browse', 302)
-    auth = '&redirect_uri='+url_for('login')
-    if is_production():
-        auth = auth.replace('http://', 'https://', 1)
-    return basic_page(
-        'Login',
-        '<div class="jumbotron" align="center">'
-        '  <h1>You have to authenticate first:</h1>'
-        '  <a class="btn btn-default btn-lg" href="{}">'
-        '    <img src="https://slack.com/favicon.ico" width="24"/>'
-        '    Basic (public channels)'
-        '  </a>'
-        '  &nbsp;'
-        '  <a class="btn btn-default btn-lg" href="{}">'
-        '    <img src="https://slack.com/favicon.ico" width="24"/>'
-        '    Advanced (import private messaging)'
-        '  </a>'
-        '</div>'.format(LOGIN_LINK+auth, TOKEN_LINK+auth)
-    )
+    return redirect_page('/login', 'Auth required')
 
 
 @app.route('/login')
 def login():
     # if logging in is not in progress
     if not flask.request.args.get('code'):
-        if tokens.is_known_token(flask.request.cookies.get('token')):
-            return flask.redirect('/browse', 302)
-        return redirect_page('/', 'Auth required')
+        auth = '&redirect_uri='+url_for('login')
+        return basic_page(
+            'Login',
+            '<div class="jumbotron" align="center">'
+            '  <h1>You have to authenticate first:</h1>'
+            '  <a class="btn btn-default btn-lg" href="{}">'
+            '    <img src="https://slack.com/favicon.ico" width="24"/>'
+            '    Basic (public channels)'
+            '  </a>'
+            '  &nbsp;'
+            '  <a class="btn btn-default btn-lg" href="{}">'
+            '    <img src="https://slack.com/favicon.ico" width="24"/>'
+            '    Advanced (import private messaging)'
+            '  </a>'
+            '</div>'.format(LOGIN_LINK+auth, TOKEN_LINK+auth)
+        )
     # login part
     try:
         oauth = Slacker.oauth.access(
@@ -142,12 +144,9 @@ def login():
     user_info = client.auth.test().body
     response = flask.make_response(
         redirect_page('/browse', 'Auth success'))
-    next_year = time.strftime("%a, %d-%b-%Y %T GMT",
-                              time.gmtime(time.time()+365*24*60*60))
     scope = oauth['scope'].split(',')
-    tokens.upsert(token, user=user_info, full_access=len(scope) > 1)
-    response.set_cookie('token', token, expires=next_year)
-    response.set_cookie('user', user_info['user'], expires=next_year)
+    auth_key = tokens.upsert(token, user=user_info, full_access=len(scope) > 1)
+    response.set_cookie('auth', auth_key, expires=cookies_expire_date())
     return response
 
 
@@ -155,12 +154,23 @@ def login():
 def logout():
     response = flask.make_response(
         redirect_page('https://slack.com', 'Bye'))
-    year_ago = time.strftime("%a, %d-%b-%Y %T GMT",
-                             time.gmtime(time.time()-365*24*60*60))
     mongo.db.z_logouts.insert_one({'_id': time.time(),
                                    'user': flask.request.cookies.get('user')})
-    response.set_cookie('token', '', expires=year_ago)
-    response.set_cookie('user', '', expires=year_ago)
+    response.delete_cookie('auth')
+    # TODO delete db token data
+    return response
+
+
+# TODO remove after 1 month (after May 5th)
+@app.route('/new_auth')
+def new_auth():
+    response = flask.redirect('/', 302)
+    token = flask.request.cookies.get('token')
+    if tokens.is_known_token(token):
+        auth_key = tokens.get_key_by_known_token(token)
+        response.set_cookie('auth', auth_key, expires=cookies_expire_date())
+    response.delete_cookie('token')
+    response.delete_cookie('user')
     return response
 
 
@@ -388,11 +398,14 @@ def redirect_to_https():
 
 @app.before_request
 def check_auth():
-    if not tokens.is_known_token(flask.request.cookies.get('token')) and \
-       flask.request.path not in ['/', '/login'] and \
-       not os.path.isfile(os.path.join(app.static_folder,
-                                       flask.request.path[1:])):
-        return redirect_page('/', 'Auth required')
+    if tokens.is_known_user(flask.request.cookies.get('auth')):
+        return
+    if flask.request.path in ['/new_auth', '/login'] or \
+       os.path.isfile(os.path.join(app.static_folder, flask.request.path[1:])):
+        return
+    if flask.request.cookies.get('token'):
+        return flask.redirect('/new_auth', 302)
+    return redirect_page('/login', 'Auth required')
 
 
 class Scheduler(object):
