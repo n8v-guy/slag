@@ -64,4 +64,4 @@ class TokenStore(mongo_store.MongoStore):
         """:returns: value associated with encrypted key"""
         if self.is_known_user(enc_key):
             return self[enc_key]
-        raise ValueError('Wrong key')
+        raise KeyError()

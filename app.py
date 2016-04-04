@@ -418,8 +418,8 @@ class Scheduler(object):
         self.background_task()
 
     @staticmethod
-    def check_tokens():
-        print('Checking tokens here')
+    def validate_tokens():
+        print('Validating tokens')
         for token, enc_key in tokens.decrypt_keys_map().items():
             time.sleep(1)
             print('Check token', token)
@@ -432,12 +432,30 @@ class Scheduler(object):
             print('Valid token')
             tokens.upsert(token, user_info)
 
-    def fetch_messages(self):
-        pass  # taking items from generator here
+    @staticmethod
+    def fetch_user_channels():
+        print('Fetching user channels here')
+        for token, enc_key in tokens.decrypt_keys_map().items():
+            user_info = tokens[enc_key]
+            if not user_info['full_access']:
+                continue
+            time.sleep(1)
+            print('Fetch channels for', user_info['login'])
+            try:
+                all_ch = Slacker(token).channels.list(exclude_archived=1).body
+            except Error as err:
+                print('Fetch channels error:', err)
+                continue
+            print('Channels fetched')
+            channels_list = [
+                channel['id']
+                for channel in all_ch['channels'] if channel['is_member']
+                ]
+            people.set_field(user_info['user'], 'channels', channels_list)
 
     def setup_scheduler(self):
-        schedule.every(30).seconds.do(self.fetch_messages)
-        schedule.every(12).hours.do(self.check_tokens)
+        schedule.every(11).hours.do(self.fetch_user_channels)
+        schedule.every(12).hours.do(self.validate_tokens)
 
     def background_task(self):
         schedule.run_pending()
