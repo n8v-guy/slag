@@ -417,8 +417,21 @@ class Scheduler(object):
         self.setup_scheduler()
         self.background_task()
 
-    def check_tokens(self):
-        pass
+    @staticmethod
+    def check_tokens():
+        print('Checking tokens here')
+        for token, enc_key in tokens.decrypt_keys_map().iteritems():
+            print('Check token', token)
+            try:
+                user_info = Slacker(token).auth.test().body
+            except Error as err:
+                print('Error for this token:', err)
+                del tokens[enc_key]
+                yield
+                continue
+            print('Valid token')
+            tokens.upsert(token, user_info)
+            yield
 
     def fetch_messages(self):
         pass  # taking items from generator here
@@ -436,8 +449,9 @@ class Scheduler(object):
         self.bg_task.start()
 
     def background_stop(self):
-        self.bg_task.cancel()
-        self.bg_task.join()
+        if self.bg_task:
+            self.bg_task.cancel()
+            self.bg_task.join()
 
 
 def init_app():
