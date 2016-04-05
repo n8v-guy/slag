@@ -229,7 +229,7 @@ def browse():
                                   's': s})
     results = []
     if s == '':
-        f = flask.request.args.get('filter')
+        f = flask.request.args.get('filter', 'my')  # 'my' when possible
         my_channels = people[user_info['user']].get('channels')
         if f == 'my' and user_info['full_access'] and my_channels:
             channels = [streams.get_row(k) for k, v in streams.items()

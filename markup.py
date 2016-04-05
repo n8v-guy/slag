@@ -25,8 +25,8 @@ ITAL_RE = re.compile(r'\b_(.+?)_\b')
 STRK_RE = re.compile(r'\B~(.+?)~\B')
 PREF_RE = re.compile(r'\B```(.+?)```\B[\n]?', re.MULTILINE | re.DOTALL)
 CODE_RE = re.compile(r'\B`(.+?)`\B')
-QUOT_RE = re.compile(r'^>(.+?)$[\n]?', re.MULTILINE)
-LNGQ_RE = re.compile(r'>>>(.+)', re.MULTILINE | re.DOTALL)
+QUOT_RE = re.compile(r'^>\s*(.+?)$[\n]?', re.MULTILINE)
+LNGQ_RE = re.compile(r'>>>\s*(.+)[\n]*', re.MULTILINE | re.DOTALL)
 MULQ_RE = re.compile(re.escape(wrap_html('</blockquote>')) +
                      re.escape(wrap_html('<blockquote>')), re.MULTILINE)
 
