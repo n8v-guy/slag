@@ -152,10 +152,11 @@ def login():
 
 @app.route('/logout')
 def logout():
+    user_info = get_user_info()
     response = flask.make_response(
         redirect_page('https://slack.com', 'Bye'))
     mongo.db.z_logouts.insert_one({'_id': time.time(),
-                                   'user': flask.request.cookies.get('user')})
+                                   'user': user_info['login']})
     response.delete_cookie('auth')
     # TODO delete db token data
     return response
@@ -176,13 +177,14 @@ def new_auth():
 
 @app.route('/search')
 def search():
+    user_info = get_user_info()
     q = flask.request.args.get('q', '')        # query
     s = flask.request.args.get('s', '')        # stream
     c = flask.request.args.get('c', '')        # context
     p = int(flask.request.args.get('p', 0))    # results page
     n = int(flask.request.args.get('n', 100))  # number of results
     mongo.db.z_search.insert_one({'_id': time.time(),
-                                  'user': flask.request.cookies.get('user'),
+                                  'user': user_info['login'],
                                   'q': q})
     results = []
     if q == '':
@@ -210,26 +212,38 @@ def search():
     return flask.render_template('search.htm', **locals())
 
 
+def get_user_info():
+    enc_key = flask.request.cookies.get('auth')
+    assert tokens.is_known_user(enc_key)
+    return tokens[enc_key]
+
+
 @app.route('/browse')
 def browse():
+    user_info = get_user_info()
     s = flask.request.args.get('s', '')         # stream
     p = int(flask.request.args.get('p', 0))     # results page
     n = int(flask.request.args.get('n', 1000))  # number of results
     mongo.db.z_browse.insert_one({'_id': time.time(),
-                                  'user': flask.request.cookies.get('user'),
+                                  'user': user_info['login'],
                                   's': s})
     results = []
     if s == '':
-        f = flask.request.args.get('filter', 'active')
-        filters = {
-            'all': {},
-            'active': {'active': True},
-            'archive': {'active': False},
-        }
-        if f not in filters:
+        f = flask.request.args.get('filter')
+        my_channels = people[user_info['user']].get('channels')
+        if f == 'my' and user_info['full_access'] and my_channels:
+            channels = [streams.get_row(k) for k, v in streams.items()
+                        if k in my_channels]
+        elif f == 'all':
+            channels = [streams.get_row(k) for k, v in streams.items()
+                        if v['type'] == 0]
+        elif f == 'archive':
+            channels = [streams.get_row(k) for k, v in streams.items()
+                        if v['type'] == 0 and not v['active']]
+        else:  # by default, f == 'active':
             f = 'active'
-        channels = list(mongo.db.streams.find(
-            filters[f], sort=[('name', pymongo.ASCENDING)]))
+            channels = [streams.get_row(k) for k, v in streams.items()
+                        if v['type'] == 0 and v['active']]
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
         .find({'to': s},
