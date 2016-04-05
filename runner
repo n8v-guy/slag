@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ "$DEBUG_SERVER" == "1" ]; then
+    gunicorn app:app
+else
+    python app.py
+fi

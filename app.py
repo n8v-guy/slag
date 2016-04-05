@@ -47,8 +47,12 @@ with app.app_context() as ctx:
     streams = mongo_store.MongoStore(mongo.db.streams, ctx)
 
 
+def is_forced_debug():
+    return os.environ.get('DEBUG_SERVER', '0') == '1'
+
+
 def is_production():
-    return __name__ == 'app'
+    return __name__ == 'app' or is_forced_debug()
 
 
 def url_for(endpoint):
@@ -244,6 +248,7 @@ def browse():
             f = 'active'
             channels = [streams.get_row(k) for k, v in streams.items()
                         if v['type'] == 0 and v['active']]
+        channels.sort(key=lambda ch: ch['name'])
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
         .find({'to': s},
@@ -493,6 +498,9 @@ if __name__ == "__main__":  # debug branch here
     # only for working child process (debug hierarchy)
     if 'WERKZEUG_RUN_MAIN' in os.environ:
         init_app()
-    app.run(host='127.0.0.1', port=8080, debug=True)
+    if is_forced_debug():
+        app.run(host='0.0.0.0', port=int(os.environ.get('PORT')), debug=True)
+    else:
+        app.run(host='127.0.0.1', port=8080, debug=True)
 else:  # __name__ == 'app' for gunicorn production
     init_app()
