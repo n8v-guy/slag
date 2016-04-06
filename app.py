@@ -92,13 +92,13 @@ def active_users():
         with archive.open('users.json') as all_users:
             users = json.loads(all_users.read())
             for user in users:
-                if 'deleted' not in user or not user['deleted']:
-                    user_login = user['name']
-                    if domain:
-                        mail = user['profile'].get('email', '')
-                        if mail.endswith(domain):
-                            user_login = mail.split('@')[0]
-                    active.append(user_login)
+                if 'deleted' in user and user['deleted']:
+                    continue
+                user_login = user['name']
+                mail = user['profile'].get('email', '')
+                if domain and mail.endswith(domain):
+                    user_login = mail.split('@')[0]
+                active.append(user_login)
     return ' '.join([user+'@' for user in active])
 
 
@@ -154,7 +154,7 @@ def login_oauth():
                                       'ctx': 'auth.test',
                                       'msg': str(err)})
         return basic_page('Auth error', 'Auth error: ' + str(err))
-    except AssertionError:
+    except AssertionError:  # noinspection PyUnboundLocalVariable
         return basic_page('Wrong team', 'Wrong team: ' + user_info['team'])
     return login_success(oauth, token, user_info)
 
@@ -208,7 +208,9 @@ def search():
     results = []
     if q == '':
         return flask.render_template('search.htm', **locals())
-    condition = {'$text': {'$search': q}}
+    channels, skip = filter_streams(user_info, 'all')
+    channels_id = [chan['_id'] for chan in channels]
+    condition = {'$text': {'$search': q}, 'to': {'$in': channels_id}}
     if c != '':
         ts = ts_from_message_uid(c)
         condition = {'ts': {'$lt': ts+60*60, '$gt': ts-60*60}, 'to': s}
@@ -220,7 +222,14 @@ def search():
               skip=p*n,
               limit=n)
     total = query.count()
+    results = prepare_message(query)
+    return flask.render_template('search.htm', **locals())
+
+
+def prepare_message(query):
+    results = []
     for res in query:
+        # TODO optimize MongoStore class to save '_id' field in values
         res['from'] = people.get_row(res['from'])
         res['to'] = streams.get_row(res['to'])
         res['ctx'] = message_uid(res['from']['_id'], str(res['ts']))
@@ -228,7 +237,7 @@ def search():
         res['msg'] = flask.Markup(
             markup.Markup(res['msg'], people, streams))
         results.append(res)
-    return flask.render_template('search.htm', **locals())
+    return results
 
 
 def get_user_info():
@@ -248,22 +257,8 @@ def browse():
                                   's': s})
     results = []
     if s == '':
-        f = flask.request.args.get('filter', 'my')  # 'my' when possible
-        my_channels = people[user_info['user']].get('channels')
-        if f == 'my' and user_info['full_access'] and my_channels:
-            channels = [streams.get_row(k) for k, v in streams.items()
-                        if k in my_channels]
-        elif f == 'all':
-            channels = [streams.get_row(k) for k, v in streams.items()
-                        if v['type'] == 0]
-        elif f == 'archive':
-            channels = [streams.get_row(k) for k, v in streams.items()
-                        if v['type'] == 0 and not v['active']]
-        else:  # by default, f == 'active':
-            f = 'active'
-            channels = [streams.get_row(k) for k, v in streams.items()
-                        if v['type'] == 0 and v['active']]
-        channels.sort(key=lambda ch: ch['name'])
+        filter_name = flask.request.args.get('filter', 'all')
+        channels, filter_name = filter_streams(user_info, filter_name)
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
         .find({'to': s},
@@ -271,15 +266,27 @@ def browse():
               skip=p*n,
               limit=n)
     total = query.count()
-    for res in query:
-        # TODO optimize MongoStore class to save '_id' field in values
-        res['from'] = people.get_row(res['from'])
-        res['to'] = streams.get_row(res['to'])
-        res['ts'] = time.ctime(res['ts'])
-        res['msg'] = flask.Markup(
-            markup.Markup(res['msg'], people, streams))
-        results.append(res)
+    results = prepare_message(query)
     return flask.render_template('stream.htm', **locals())
+
+
+def filter_streams(user_info, filter_name):
+    my_channels = people[user_info['user']].get('channels')
+    if filter_name == 'my' and user_info['full_access'] and my_channels:
+        channels = [streams.get_row(k) for k, v in streams.items()
+                    if k in my_channels]
+    elif filter_name == 'all':
+        channels = [streams.get_row(k) for k, v in streams.items()
+                    if v['type'] == 0]
+    elif filter_name == 'archive':
+        channels = [streams.get_row(k) for k, v in streams.items()
+                    if v['type'] == 0 and not v['active']]
+    else:  # by default, f == 'active':
+        filter_name = 'active'
+        channels = [streams.get_row(k) for k, v in streams.items()
+                    if v['type'] == 0 and v['active']]
+    channels.sort(key=lambda ch: ch['name'])
+    return channels, filter_name
 
 
 def message_uid(stream, timestamp):
