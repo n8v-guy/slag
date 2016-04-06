@@ -111,25 +111,28 @@ def index():
 
 @app.route('/login')
 def login():
-    # if logging in is not in progress
-    if not flask.request.args.get('code'):
-        auth = '&redirect_uri='+url_for('login')
-        return basic_page(
-            'Login',
-            '<div class="jumbotron" align="center">'
-            '  <h1>You have to authenticate first:</h1>'
-            '  <a class="btn btn-default btn-lg" href="{}">'
-            '    <img src="https://slack.com/favicon.ico" width="24"/>'
-            '    Basic (public channels)'
-            '  </a>'
-            '  &nbsp;'
-            '  <a class="btn btn-default btn-lg" href="{}">'
-            '    <img src="https://slack.com/favicon.ico" width="24"/>'
-            '    Advanced (import private messaging)'
-            '  </a>'
-            '</div>'.format(LOGIN_LINK+auth, TOKEN_LINK+auth)
-        )
-    # login part
+    if flask.request.args.get('code'):
+        return login_oauth()
+    # logging in is not in progress
+    auth = '&redirect_uri='+url_for('login')
+    return basic_page(
+        'Login',
+        '<div class="jumbotron" align="center">'
+        '  <h1>You have to authenticate first:</h1>'
+        '  <a class="btn btn-default btn-lg" href="{}">'
+        '    <img src="https://slack.com/favicon.ico" width="24"/>'
+        '    Basic (public channels)'
+        '  </a>'
+        '  &nbsp;'
+        '  <a class="btn btn-default btn-lg" href="{}">'
+        '    <img src="https://slack.com/favicon.ico" width="24"/>'
+        '    Advanced (import private messaging)'
+        '  </a>'
+        '</div>'.format(LOGIN_LINK+auth, TOKEN_LINK+auth)
+    )
+
+
+def login_oauth():
     try:
         oauth = Slacker.oauth.access(
             client_id=SLACK_CLIENT_ID,
@@ -141,20 +144,27 @@ def login():
         mongo.db.z_errors.insert_one({'_id': time.time(),
                                       'ctx': 'oauth',
                                       'msg': str(err)})
-        oauth = {}
-    # TODO check if our team selected
-    if not oauth.get('ok'):
-        return basic_page('Auth failed', str(oauth))
+        return basic_page('OAuth error', 'OAuth error: ' + str(err))
     token = oauth['access_token']
-    client = Slacker(token)
-    # TODO check exceptions
-    user_info = client.auth.test().body
-    response = flask.make_response(
-        redirect_page('/browse', 'Auth success'))
+    try:
+        user_info = Slacker(token).auth.test().body
+        assert user_info['team_id'] == SLACK_TEAM_ID
+    except Error as err:
+        mongo.db.z_errors.insert_one({'_id': time.time(),
+                                      'ctx': 'auth.test',
+                                      'msg': str(err)})
+        return basic_page('Auth error', 'Auth error: ' + str(err))
+    except AssertionError:
+        return basic_page('Wrong team', 'Wrong team: ' + user_info['team'])
+    return login_success(oauth, token, user_info)
+
+
+def login_success(oauth, token, user_info):
+    response = flask.redirect('/browse', 302)
     scope = oauth['scope'].split(',')
     auth_key = tokens.upsert(token, user=user_info, full_access=len(scope) > 1)
     mongo.db.z_logins.insert_one({'_id': time.time(),
-                                  'user': user_info['login']})
+                                  'user': user_info['user']})
     response.set_cookie('auth', auth_key, expires=cookies_expire_date())
     return response
 
@@ -165,7 +175,7 @@ def logout():
     response = flask.make_response(
         redirect_page('https://slack.com', 'Bye'))
     mongo.db.z_logouts.insert_one({'_id': time.time(),
-                                   'user': user_info['login']})
+                                   'user': user_info['user']})
     response.delete_cookie('auth')
     # TODO delete db token data
     return response
@@ -193,7 +203,7 @@ def search():
     p = int(flask.request.args.get('p', 0))    # results page
     n = int(flask.request.args.get('n', 100))  # number of results
     mongo.db.z_search.insert_one({'_id': time.time(),
-                                  'user': user_info['login'],
+                                  'user': user_info['user'],
                                   'q': q})
     results = []
     if q == '':
@@ -234,7 +244,7 @@ def browse():
     p = int(flask.request.args.get('p', 0))     # results page
     n = int(flask.request.args.get('n', 1000))  # number of results
     mongo.db.z_browse.insert_one({'_id': time.time(),
-                                  'user': user_info['login'],
+                                  'user': user_info['user'],
                                   's': s})
     results = []
     if s == '':
@@ -387,7 +397,7 @@ def import_db():
     # TODO convert this to background task
     # TODO check admin rights here
     if is_production():
-        return redirect_page('/browse', 'Admin rights required')
+        return redirect_page('/browse', 'Access denied')
     # TODO add logging around
     with ZipFile('archive.zip') as archive:
         import_users(archive)
@@ -467,7 +477,7 @@ class Scheduler(object):
             if not user_info['full_access']:
                 continue
             time.sleep(1)
-            print('Fetch channels for', user_info['login'])
+            print('Fetch channels for', user_info['user'])
             try:
                 all_ch = Slacker(token).channels.list(exclude_archived=1).body
             except Error as err:

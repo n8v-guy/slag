@@ -35,7 +35,7 @@ class TokenStore(mongo_store.MongoStore):
         else:
             key = self._cipher.encrypt(token)
             self._tokens[token] = key
-        if not full_access:
+        if full_access is None:
             assert key in self, 'full_access can be None only for existing key'
             full_access = self[key].get('full_access', False)
         rec = TokenStore.record(user, full_access)
