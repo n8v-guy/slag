@@ -147,24 +147,24 @@ def login_oauth():
         return basic_page('OAuth error', 'OAuth error: ' + str(err))
     token = oauth['access_token']
     try:
-        user_info = Slacker(token).auth.test().body
-        assert user_info['team_id'] == SLACK_TEAM_ID
+        api_user_info = Slacker(token).auth.test().body
+        assert api_user_info['team_id'] == SLACK_TEAM_ID
     except Error as err:
         mongo.db.z_errors.insert_one({'_id': time.time(),
                                       'ctx': 'auth.test',
                                       'msg': str(err)})
         return basic_page('Auth error', 'Auth error: ' + str(err))
     except AssertionError:  # noinspection PyUnboundLocalVariable
-        return basic_page('Wrong team', 'Wrong team: ' + user_info['team'])
-    return login_success(oauth, token, user_info)
+        return basic_page('Wrong team', 'Wrong team: ' + api_user_info['team'])
+    return login_success(oauth, token, api_user_info)
 
 
-def login_success(oauth, token, user_info):
+def login_success(oauth, token, api_user_info):
     response = flask.redirect('/browse', 302)
-    scope = oauth['scope'].split(',')
-    auth_key = tokens.upsert(token, user=user_info, full_access=len(scope) > 1)
+    access = oauth['scope'].count(',') > 0
+    auth_key = tokens.upsert(token, user=api_user_info, full_access=access)
     mongo.db.z_logins.insert_one({'_id': time.time(),
-                                  'user': user_info['user']})
+                                  'user': api_user_info['user']})
     response.set_cookie('auth', auth_key, expires=cookies_expire_date())
     return response
 
@@ -175,7 +175,7 @@ def logout():
     response = flask.make_response(
         redirect_page('https://slack.com', 'Bye'))
     mongo.db.z_logouts.insert_one({'_id': time.time(),
-                                   'user': user_info['user']})
+                                   'user': user_info['login']})
     response.delete_cookie('auth')
     # TODO delete db token data
     return response
@@ -203,7 +203,7 @@ def search():
     p = int(flask.request.args.get('p', 0))    # results page
     n = int(flask.request.args.get('n', 100))  # number of results
     mongo.db.z_search.insert_one({'_id': time.time(),
-                                  'user': user_info['user'],
+                                  'user': user_info['login'],
                                   'q': q})
     results = []
     if q == '':
@@ -253,7 +253,7 @@ def browse():
     p = int(flask.request.args.get('p', 0))     # results page
     n = int(flask.request.args.get('n', 1000))  # number of results
     mongo.db.z_browse.insert_one({'_id': time.time(),
-                                  'user': user_info['user'],
+                                  'user': user_info['login'],
                                   's': s})
     results = []
     if s == '':
@@ -271,7 +271,7 @@ def browse():
 
 
 def filter_streams(user_info, filter_name):
-    my_channels = people[user_info['user']].get('channels')
+    my_channels = people[user_info['login']].get('channels')
     if filter_name == 'my' and user_info['full_access'] and my_channels:
         channels = [streams.get_row(k) for k, v in streams.items()
                     if k in my_channels]
@@ -484,7 +484,7 @@ class Scheduler(object):
             if not user_info['full_access']:
                 continue
             time.sleep(1)
-            print('Fetch channels for', user_info['user'])
+            print('Fetch channels for', user_info['login'])
             try:
                 all_ch = Slacker(token).channels.list(exclude_archived=1).body
             except Error as err:
