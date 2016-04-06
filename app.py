@@ -137,10 +137,13 @@ def login():
             code=flask.request.args['code'],
             redirect_uri=url_for('login')
         ).body
-    except Error:
+    except Error as err:
+        mongo.db.z_errors.insert_one({'_id': time.time(),
+                                      'ctx': 'oauth',
+                                      'msg': str(err)})
         oauth = {}
     # TODO check if our team selected
-    if oauth.get('ok') is None:
+    if not oauth.get('ok'):
         return basic_page('Auth failed', str(oauth))
     token = oauth['access_token']
     client = Slacker(token)
@@ -150,6 +153,8 @@ def login():
         redirect_page('/browse', 'Auth success'))
     scope = oauth['scope'].split(',')
     auth_key = tokens.upsert(token, user=user_info, full_access=len(scope) > 1)
+    mongo.db.z_logins.insert_one({'_id': time.time(),
+                                  'user': user_info['login']})
     response.set_cookie('auth', auth_key, expires=cookies_expire_date())
     return response
 
@@ -437,7 +442,7 @@ class Scheduler(object):
         self.background_task()
 
     @staticmethod
-    def validate_tokens():
+    def tokens_validation():
         print('Validating tokens')
         for token, enc_key in tokens.decrypt_keys_map().items():
             time.sleep(1)
@@ -445,6 +450,9 @@ class Scheduler(object):
             try:
                 user_info = Slacker(token).auth.test().body
             except Error as err:
+                mongo.db.z_errors.insert_one({'_id': time.time(),
+                                              'ctx': 'tokens_validation',
+                                              'msg': str(err)})
                 print('Error for this token:', err)
                 del tokens[enc_key]
                 continue
@@ -452,7 +460,7 @@ class Scheduler(object):
             tokens.upsert(token, user_info)
 
     @staticmethod
-    def fetch_user_channels():
+    def channels_fetch():
         print('Fetching user channels here')
         for token, enc_key in tokens.decrypt_keys_map().items():
             user_info = tokens[enc_key]
@@ -463,6 +471,9 @@ class Scheduler(object):
             try:
                 all_ch = Slacker(token).channels.list(exclude_archived=1).body
             except Error as err:
+                mongo.db.z_errors.insert_one({'_id': time.time(),
+                                              'ctx': 'channels_fetch',
+                                              'msg': str(err)})
                 print('Fetch channels error:', err)
                 continue
             print('Channels fetched')
@@ -473,8 +484,8 @@ class Scheduler(object):
             people.set_field(user_info['user'], 'channels', channels_list)
 
     def setup_scheduler(self):
-        schedule.every(11).hours.do(self.fetch_user_channels)
-        schedule.every(12).hours.do(self.validate_tokens)
+        schedule.every(11).hours.do(self.channels_fetch)
+        schedule.every(12).hours.do(self.tokens_validation)
 
     def background_task(self):
         schedule.run_pending()
