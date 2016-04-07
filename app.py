@@ -160,6 +160,7 @@ def login_oauth():
 
 
 def login_success(oauth, token, api_user_info):
+    Scheduler.user_fetch(token, tokens.get_key_by_known_token(token))
     response = flask.redirect('/browse', 302)
     access = oauth['scope'].count(',') > 0
     auth_key = tokens.upsert(token, user=api_user_info, full_access=access)
@@ -208,7 +209,7 @@ def search():
     results = []
     if q == '':
         return flask.render_template('search.htm', **locals())
-    channels, skip = filter_streams(user_info, 'all')
+    channels, f = filter_streams(user_info, 'all')
     channels_id = [chan['_id'] for chan in channels]
     condition = {'$text': {'$search': q}, 'to': {'$in': channels_id}}
     if c != '':
@@ -257,8 +258,8 @@ def browse():
                                   's': s})
     results = []
     if s == '':
-        filter_name = flask.request.args.get('filter', 'all')
-        channels, filter_name = filter_streams(user_info, filter_name)
+        f = flask.request.args.get('filter', 'all')
+        channels, f = filter_streams(user_info, f)
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
         .find({'to': s},
@@ -271,7 +272,7 @@ def browse():
 
 
 def filter_streams(user_info, filter_name):
-    my_channels = people[user_info['login']].get('channels')
+    my_channels = people[user_info['user']].get('channels')
     if filter_name == 'my' and user_info['full_access'] and my_channels:
         channels = [streams.get_row(k) for k, v in streams.items()
                     if k in my_channels]
@@ -477,31 +478,39 @@ class Scheduler(object):
             tokens.upsert(token, user_info)
 
     @staticmethod
-    def channels_fetch():
+    def channels_fetch_all():
         print('Fetching user channels here')
         for token, enc_key in tokens.decrypt_keys_map().items():
-            user_info = tokens[enc_key]
-            if not user_info['full_access']:
-                continue
             time.sleep(1)
-            print('Fetch channels for', user_info['login'])
-            try:
-                all_ch = Slacker(token).channels.list(exclude_archived=1).body
-            except Error as err:
-                mongo.db.z_errors.insert_one({'_id': time.time(),
-                                              'ctx': 'channels_fetch',
-                                              'msg': str(err)})
-                print('Fetch channels error:', err)
-                continue
-            print('Channels fetched')
-            channels_list = [
-                channel['id']
-                for channel in all_ch['channels'] if channel['is_member']
-                ]
-            people.set_field(user_info['user'], 'channels', channels_list)
+            Scheduler.channels_fetch(token, enc_key)
+
+    @staticmethod
+    def channels_fetch(token, enc_key):
+        user_info = tokens[enc_key]
+        if not user_info['full_access']:
+            return
+        print('Fetch channels for', user_info['login'])
+        try:
+            all_ch = Slacker(token).channels.list(exclude_archived=1).body
+        except Error as err:
+            mongo.db.z_errors.insert_one({'_id': time.time(),
+                                          'ctx': 'channels_fetch',
+                                          'msg': str(err)})
+            print('Fetch channels error:', err)
+            return
+        channels_list = [
+            channel['id']
+            for channel in all_ch['channels'] if channel['is_member']
+            ]
+        people.set_field(user_info['user'], 'channels', channels_list)
+        print('Channels fetched')
+
+    @staticmethod
+    def user_fetch(token, enc_key):
+        Scheduler.channels_fetch(token, enc_key)
 
     def setup_scheduler(self):
-        schedule.every(11).hours.do(self.channels_fetch)
+        schedule.every(11).hours.do(self.channels_fetch_all)
         schedule.every(12).hours.do(self.tokens_validation)
 
     def background_task(self):
