@@ -160,13 +160,13 @@ def login_oauth():
 
 
 def login_success(oauth, token, api_user_info):
-    Scheduler.user_fetch(token, tokens.get_key_by_known_token(token))
     response = flask.redirect('/browse', 302)
     access = oauth['scope'].count(',') > 0
     auth_key = tokens.upsert(token, user=api_user_info, full_access=access)
     mongo.db.z_logins.insert_one({'_id': time.time(),
                                   'user': api_user_info['user']})
     response.set_cookie('auth', auth_key, expires=cookies_expire_date())
+    Scheduler.user_fetch(token, tokens.get_key_by_known_token(token))
     return response
 
 
