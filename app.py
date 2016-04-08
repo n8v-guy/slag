@@ -258,7 +258,7 @@ def browse():
                                   's': s})
     results = []
     if s == '':
-        f = flask.request.args.get('filter', 'all')
+        f = flask.request.args.get('filter', 'my')
         channels, f = filter_streams(user_info, f)
         return flask.render_template('browse.htm', **locals())
     query = mongo.db.messages\
