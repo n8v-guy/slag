@@ -160,22 +160,28 @@ class SlackArchive(object):
             for fname in [n for n in files
                           if n.startswith(channel['name'] + os.path.sep)]:
                 with archive.open(fname) as day_export:
-                    msgs = json.loads(day_export.read())
-                    for msg in msgs:
-                        stype = msg.get('subtype', '')
-                        if stype not in types_import:
-                            if stype not in types_ignore:
-                                types_ignore.add(stype)
-                            continue
-                        msg_id = SlackArchive.message_uid(channel['id'],
-                                                          msg['ts'])
-                        bulk.find({'_id': msg_id}).upsert().update(
-                            {'$set': {'ts': float(msg['ts']),
-                                      'type': hash(stype),
-                                      'msg': msg['text'],
-                                      'from': msg['user'],
-                                      'to': channel['id']}})
+                    SlackArchive.import_messages_day(
+                        bulk, channel, day_export, types_ignore, types_import)
         return bulk.execute(), types_ignore
+
+    @staticmethod
+    def import_messages_day(bulk, channel, day_export,
+                            types_ignore, types_import):
+        msgs = json.loads(day_export.read())
+        for msg in msgs:
+            stype = msg.get('subtype', '')
+            if stype not in types_import:
+                if stype not in types_ignore:
+                    types_ignore.add(stype)
+                continue
+            msg_id = SlackArchive.message_uid(channel['id'],
+                                              msg['ts'])
+            bulk.find({'_id': msg_id}).upsert().update(
+                {'$set': {'ts': float(msg['ts']),
+                          'type': hash(stype),
+                          'msg': msg['text'],
+                          'from': msg['user'],
+                          'to': channel['id']}})
 
     def tokens_validation(self):
         print('Validating tokens')

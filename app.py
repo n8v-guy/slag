@@ -58,8 +58,8 @@ class WebServer(FlaskExt):
     """Wrapper for web-server functionality"""
     def __init__(self):
         super(WebServer, self).__init__(__name__)
-        self.before_request(WebServer.redirect_to_https)
-        self.before_request(self.check_auth)
+        self.before_request(WebServer._redirect_to_https)
+        self.before_request(self._check_auth)
         # TODO eliminate MongoLab mentions
         self.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
         self.mongo = flask_pymongo.PyMongo(self)
@@ -78,7 +78,7 @@ class WebServer(FlaskExt):
             else:  # lightweight starter for Werkzeug reloader
                 app = flask.Flask(  # pylint: disable=redefined-variable-type
                     __name__)
-            if WebServer.is_forced_debug():
+            if WebServer._is_forced_debug():
                 app.run(host='0.0.0.0', port=int(os.environ.get('PORT')),
                         debug=True)
             else:
@@ -87,12 +87,12 @@ class WebServer(FlaskExt):
             WebServer()
 
     @staticmethod
-    def is_forced_debug():
+    def _is_forced_debug():
         return os.environ.get('DEBUG_SERVER', '0') == '1'
 
     @staticmethod
     def is_production():
-        return __name__ == 'app' or WebServer.is_forced_debug()
+        return __name__ == 'app' or WebServer._is_forced_debug()
 
     @staticmethod
     def url_for(endpoint):
@@ -102,11 +102,11 @@ class WebServer(FlaskExt):
         return url
 
     @staticmethod
-    def redirect_page(url, msg):
+    def _redirect_page(url, msg):
         return flask.render_template('redirect.htm', url_to=url, message=msg)
 
     @staticmethod
-    def basic_page(title, html):
+    def _basic_page(title, html):
         return flask.render_template('basic.htm', title=title, html=html)
 
     @staticmethod
@@ -128,15 +128,15 @@ class WebServer(FlaskExt):
     def index(self):
         if self.tokens.is_known_user(flask.request.cookies.get('auth')):
             return flask.redirect('/browse', 302)
-        return WebServer.redirect_page('/login', 'Auth required')
+        return WebServer._redirect_page('/login', 'Auth required')
 
     @FlaskExt.route('/login')
     def login(self):
         if flask.request.args.get('code'):
-            return self.login_oauth()
+            return self._login_oauth()
         # logging in is not in progress
         auth = '&redirect_uri=' + WebServer.url_for('login')
-        return WebServer.basic_page(
+        return WebServer._basic_page(
             'Login',
             '<div class="jumbotron" align="center">'
             '  <h1>You have to authenticate first:</h1>'
@@ -157,7 +157,7 @@ class WebServer(FlaskExt):
         enc_key = flask.request.cookies.get('auth')
         user_info = self.tokens[enc_key]
         response = flask.make_response(
-            WebServer.redirect_page('https://slack.com', 'Bye'))
+            WebServer._redirect_page('https://slack.com', 'Bye'))
         self.mongo.db.z_logouts.insert_one({'_id': time.time(),
                                             'user': user_info['login']})
         response.delete_cookie('auth')
@@ -215,13 +215,13 @@ class WebServer(FlaskExt):
     def upload():
         # TODO check admin rights here
         if WebServer.is_production():
-            return WebServer.redirect_page('/browse', 'Access denied')
+            return WebServer._redirect_page('/browse', 'Access denied')
         archive = flask.request.files.get('archive')
         if archive and archive.filename.endswith('.zip'):
             archive.save(slack_archive.LOCAL_ARCHIVE_FILE)
-            return WebServer.redirect_page('/import_db',
-                                           archive.filename + ' saved')
-        return WebServer.basic_page(
+            return WebServer._redirect_page('/import_db',
+                                            archive.filename + ' saved')
+        return WebServer._basic_page(
             'Archive upload',
             '<form action="" method="POST" enctype="multipart/form-data">'
             ' <div class="input-group input-group-lg col-md-7" align="center">'
@@ -238,31 +238,31 @@ class WebServer(FlaskExt):
     def import_db(self):
         # TODO check admin rights here
         if WebServer.is_production():
-            return WebServer.redirect_page('/browse', 'Access denied')
+            return WebServer._redirect_page('/browse', 'Access denied')
         result, types_new = self.archive.import_archive()
-        return WebServer.basic_page('Archive import complete',
-                                    'Import complete!<br />' +
-                                    str(result) + '<br/>' +
-                                    str(types_new))
+        return WebServer._basic_page('Archive import complete',
+                                     'Import complete!<br />' +
+                                     str(result) + '<br/>' +
+                                     str(types_new))
 
     @staticmethod
-    def redirect_to_https():
+    def _redirect_to_https():
         is_http = flask.request.is_secure or \
                   flask.request.headers.get('X-Forwarded-Proto') == 'http'
         if is_http and WebServer.is_production():
             url = flask.request.url.replace('http://', 'https://', 1)
             return flask.redirect(url, code=301)
 
-    def check_auth(self):
+    def _check_auth(self):
         if self.tokens.is_known_user(flask.request.cookies.get('auth')):
             return
         if flask.request.path in ['/login'] or \
            os.path.isfile(os.path.join(self.static_folder,
                                        flask.request.path[1:])):
             return
-        return self.redirect_page('/login', 'Auth required')
+        return self._redirect_page('/login', 'Auth required')
 
-    def login_oauth(self):
+    def _login_oauth(self):
         try:
             oauth = Slacker.oauth.access(
                 client_id=SLACK_CLIENT_ID,
@@ -274,28 +274,32 @@ class WebServer(FlaskExt):
             self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                'ctx': 'oauth',
                                                'msg': str(err)})
-            return WebServer.basic_page('OAuth error',
-                                        'OAuth error: ' + str(err))
+            return WebServer._basic_page('OAuth error',
+                                         'OAuth error: ' + str(err))
         token = oauth['access_token']
+        identity_only = oauth['scope'].count(',') == 1
+        return self._login_with_token(token, identity_only)
+
+    def _login_with_token(self, token, identity_only):
         try:
-            api_user_info = Slacker(token).auth.test().body
-            assert api_user_info['team_id'] == SLACK_TEAM_ID
+            api_auth = Slacker(token).auth.test().body
+            assert api_auth['team_id'] == SLACK_TEAM_ID
         except Error as err:
             self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                'ctx': 'auth.test',
                                                'msg': str(err)})
-            return WebServer.basic_page('Auth error',
-                                        'Auth error: ' + str(err))
+            return WebServer._basic_page('Auth error',
+                                         'Auth error: ' + str(err))
         except AssertionError:  # noinspection PyUnboundLocalVariable
-            return WebServer.basic_page('Wrong team',
-                                        'Wrong team: ' + api_user_info['team'])
-        return self.login_success(oauth, token, api_user_info)
+            return WebServer._basic_page('Wrong team',
+                                         'Wrong team: ' + api_auth['team'])
+        return self._login_success(token, api_auth, identity_only)
 
-    def login_success(self, oauth, token, api_user_info):
+    def _login_success(self, token, api_user_info, identity_only):
         response = flask.redirect('/browse', 302)
-        access = oauth['scope'].count(',') > 0
         auth_key = self.tokens.upsert(token,
-                                      user=api_user_info, full_access=access)
+                                      user=api_user_info,
+                                      full_access=not identity_only)
         self.mongo.db.z_logins.insert_one({'_id': time.time(),
                                            'user': api_user_info['user']})
         response.set_cookie('auth', auth_key,

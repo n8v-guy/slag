@@ -4,7 +4,7 @@ echo [git st]
 git status --porcelain 2>&1 | grep -E '^\?\?' 1>&2
 git_st=$?
 echo [flake8]
-find . -maxdepth 1 -name \*.py -exec flake8 --max-complexity 6 {} \; 2>&1 | grep -E '^\./' 1>&2
+find . -maxdepth 1 -name \*.py -exec flake8 --max-complexity 5 {} \; 2>&1 | grep -E '^\./' 1>&2
 flake8=$?
 echo [pylint]
 find . -maxdepth 1 -name \*.py -exec pylint --disable=I --msg-template='./{path}:{line}:{column}: {msg_id} {msg} ({symbol})' {} \; 2>&1 | grep -E '^\./' 1>&2
