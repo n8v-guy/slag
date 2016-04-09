@@ -47,7 +47,7 @@
             </h4>
           </td>
         </tr>
-        <tr><td colspan="2" class="span" style="{{ 'background-color:yellow;' if c == r['ctx'] else ''}}">{{r['msg']}}</td></tr>
+        <tr><td colspan="2" class="span" style="{{ 'background-color:yellow;' if c == r['ctx'] else ''}}">{{r['msg']|safe}}</td></tr>
       </table>
   </div>
   {% endfor %}
