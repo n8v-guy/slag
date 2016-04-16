@@ -99,7 +99,11 @@ class SlackArchive(object):
 
     @staticmethod
     def ts_from_message_uid(msg_uid):
-        return float(msg_uid.split('_')[1])
+        try:
+            return float(msg_uid.split('_')[-1])
+        except ValueError:  # failed on parsing float
+            # TODO add error logging here
+            return 0
 
     def import_users(self, archive):
         with archive.open('users.json') as users_list:
