@@ -3,11 +3,14 @@
 # pylint: disable=fixme,missing-docstring
 
 import collections
+import functools
 import os
 import time
 
 import flask
 import flask_pymongo
+import rollbar
+import rollbar.contrib.flask
 from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
@@ -58,6 +61,7 @@ class WebServer(FlaskExt):
     """Wrapper for web-server functionality"""
     def __init__(self):
         super(WebServer, self).__init__(__name__)
+        self.setup_rollbar()
         self.before_request(WebServer._redirect_to_https)
         self.before_request(self._check_auth)
         # TODO eliminate MongoLab mentions
@@ -78,6 +82,7 @@ class WebServer(FlaskExt):
             else:  # lightweight starter for Werkzeug reloader
                 app = flask.Flask(  # pylint: disable=redefined-variable-type
                     __name__)
+
             if WebServer._is_forced_debug():
                 app.run(host='0.0.0.0', port=int(os.environ.get('PORT')),
                         debug=True)
@@ -85,6 +90,37 @@ class WebServer(FlaskExt):
                 app.run(host='127.0.0.1', port=8080, debug=True)
         else:  # __name__ == 'app' for gunicorn production
             WebServer()
+
+    def setup_rollbar(self):
+        # extend reports with user context
+        # pylint: disable=too-many-ancestors
+        class CustomRequest(flask.Request):
+            @property
+            def rollbar_person(self):
+                return {'id': self.cookies.get('auth')}
+        self.request_class = CustomRequest
+
+        # setup Rollbar error reporting
+        self.before_first_request(
+            functools.partial(WebServer.init_rollbar, self))
+
+    @staticmethod
+    def init_rollbar(app):
+        """init rollbar module"""
+        rollbar.init(
+            # access token for the demo app: https://rollbar.com/demo
+            os.environ['ROLLBAR_KEY'],
+            # environment name
+            'production' if WebServer.is_production() else 'flasktest',
+            # server root directory, makes tracebacks prettier
+            root=os.path.dirname(os.path.realpath(__file__)),
+            # flask already sets up logging
+            allow_logging_basic_config=False)
+
+        # send exceptions from `app` to rollbar, using flask's signal system.
+        flask.got_request_exception.connect(
+            rollbar.contrib.flask.report_exception,
+            app)
 
     @staticmethod
     def _is_forced_debug():
