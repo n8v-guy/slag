@@ -30,9 +30,9 @@ class Scheduler(object):
 
     @staticmethod
     def setup_scheduler(server):
-        # TODO: move this to user's code
-        schedule.every(11).hours.do(server.channels_fetch_all)
-        schedule.every(12).hours.do(server.tokens_validation)
+        # TODO: user-oriented handling on timer
+        schedule.every(30).minutes.do(server.channels_fetch_all)
+        schedule.every(30).minutes.do(server.tokens_validation)
 
     def background_task(self):
         schedule.run_pending()
@@ -202,31 +202,37 @@ class SlackArchive(object):
 
     def channels_fetch_all(self):
         print('Fetching user channels here')
-        for token, enc_key in self.tokens.decrypt_keys_map().items():
+        for token in self.tokens.decrypt_keys_map().keys():
             time.sleep(1)
-            self.channels_fetch(token, enc_key)
+            self.channels_fetch(token)
 
-    def channels_fetch(self, token, enc_key=None):
-        if enc_key is None:
-            enc_key = self.tokens.get_key_by_known_token(token)
+    def channels_fetch(self, token):
+        enc_key = self.tokens.get_key_by_known_token(token)
         user_info = self.tokens[enc_key]
-        if not user_info['full_access']:
-            return
-        print('Fetch channels for', user_info['login'])
-        try:
-            all_ch = Slacker(token).channels.list(exclude_archived=1).body
-        except Error as err:
-            self.database.z_errors.insert_one({'_id': time.time(),
-                                               'ctx': 'channels_fetch',
-                                               'msg': str(err)})
-            print('Fetch channels error:', err)
-            return
-        channels_list = [
+        if user_info['full_access']:
+            print('Fetch channels for', user_info['login'])
+            try:
+                all_ch = Slacker(token).channels.list(exclude_archived=1).body
+                self.people.set_field(user_info['user'], 'channels',
+                                      SlackArchive.filter_channel_ids(all_ch))
+            except Error as err:
+                self.database.z_errors.insert_one({'_id': time.time(),
+                                                   'ctx': 'channels_fetch',
+                                                   'msg': str(err)})
+                print('Fetch channels error:', err)
+                # full access was revoked
+                if str(err) == 'missing_scope':
+                    # TODO: sync field names between tokens storage and API
+                    self.tokens.set_field(user_info['user'],
+                                          'full_access', False)
+
+    @staticmethod
+    def filter_channel_ids(channels):
+        return [
             channel['id']
-            for channel in all_ch['channels'] if channel['is_member']
+            for channel in channels['channels']
+            if channel['is_member']
             ]
-        self.people.set_field(user_info['user'], 'channels', channels_list)
-        print('Channels fetched')
 
     def import_archive(self):
         # TODO convert this to background task
