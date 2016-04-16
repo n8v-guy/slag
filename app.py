@@ -75,21 +75,21 @@ class WebServer(FlaskExt):
 
     @staticmethod
     def start():
-        if __name__ == '__main__':  # if starting in debug mode
-            # check main app process
-            if os.environ.get('WERKZEUG_RUN_MAIN', 'false') == 'true':
-                app = WebServer()
-            else:  # lightweight starter for Werkzeug reloader
-                app = flask.Flask(  # pylint: disable=redefined-variable-type
-                    __name__)
+        if WebServer.is_production():
+            host = '0.0.0.0'
+            port = int(os.environ.get('PORT'))
+        else:
+            host = '127.0.0.1'
+            port = 8080
+        # __name__ == 'app' for gunicorn production
+        debug = (__name__ == '__main__')
 
-            if WebServer._is_forced_debug():
-                app.run(host='0.0.0.0', port=int(os.environ.get('PORT')),
-                        debug=True)
-            else:
-                app.run(host='127.0.0.1', port=8080, debug=True)
-        else:  # __name__ == 'app' for gunicorn production
-            WebServer()
+        if debug and os.environ.get('WERKZEUG_RUN_MAIN', 'false') != 'true':
+            # lightweight starter for Werkzeug reloader
+            app = flask.Flask(__name__)
+        else:
+            app = WebServer()  # pylint: disable=redefined-variable-type
+        app.run(host=host, port=port, debug=debug)
 
     def setup_rollbar(self):
         # extend reports with user context
