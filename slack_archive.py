@@ -61,9 +61,8 @@ class SlackArchive(object):
     def prepare_messages(self, query):
         results = []
         for res in query:
-            # TODO optimize MongoStore class to save '_id' field in values
-            res['from'] = self.people.get_row(res['from'])
-            res['to'] = self.streams.get_row(res['to'])
+            res['from'] = self.people[res['from']]
+            res['to'] = self.streams[res['to']]
             res['ctx'] = SlackArchive.message_uid(res['from']['_id'],
                                                   str(res['ts']))
             res['ts'] = time.ctime(res['ts'])
@@ -74,20 +73,20 @@ class SlackArchive(object):
     def filter_streams(self, user_info, filter_name):
         my_channels = self.people[user_info['user']].get('channels')
         if filter_name == 'my' and user_info['full_access'] and my_channels:
-            channels = [self.streams.get_row(k)
+            channels = [self.streams[k]
                         for k, v in self.streams.items()
                         if k in my_channels]
         elif filter_name == 'all':
-            channels = [self.streams.get_row(k)
+            channels = [self.streams[k]
                         for k, v in self.streams.items()
                         if v['type'] == 0]
         elif filter_name == 'archive':
-            channels = [self.streams.get_row(k)
+            channels = [self.streams[k]
                         for k, v in self.streams.items()
                         if v['type'] == 0 and not v['active']]
         else:
             filter_name = 'active'  # set default
-            channels = [self.streams.get_row(k)
+            channels = [self.streams[k]
                         for k, v in self.streams.items()
                         if v['type'] == 0 and v['active']]
         channels.sort(key=lambda ch: ch['name'])

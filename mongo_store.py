@@ -7,13 +7,6 @@ PRIMARY_KEY = '_id'
 class MongoStore(collections.MutableMapping):
     """gets collection, creates dictionary, commit on changes"""
 
-    @staticmethod
-    def _make_dict(value):
-        """return immutable dict without PRIMARY_KEY key"""
-        return datastruct.ImmutableDict({
-            k: v for k, v in value.iteritems() if k != PRIMARY_KEY
-            })
-
     def __init__(self, mongo_collection, context):
         """
         read collection to dictionary
@@ -25,7 +18,7 @@ class MongoStore(collections.MutableMapping):
         with self._context:
             rows = tuple(self._collection.find({}))
         self._store = {
-            row[PRIMARY_KEY]: MongoStore._make_dict(row) for row in rows
+            row[PRIMARY_KEY]: datastruct.ImmutableDict(row) for row in rows
         }
 
     def __setitem__(self, key, value):
@@ -37,7 +30,6 @@ class MongoStore(collections.MutableMapping):
         # do nothing on no changes
         if key in self._store.keys() and value == self._store[key]:
             return
-        del value[PRIMARY_KEY]
         with self._context:
             self._collection.find_one_and_replace(
                 {PRIMARY_KEY: key},
@@ -65,12 +57,6 @@ class MongoStore(collections.MutableMapping):
     def __getitem__(self, key):
         """read value by key from collection"""
         return self._store[key]
-
-    def get_row(self, key):
-        """read row by key from collection"""
-        row = dict(self._store[key])
-        row.update({PRIMARY_KEY: key})
-        return row
 
     def __len__(self):
         """getting row count of collection"""
