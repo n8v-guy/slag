@@ -9,17 +9,21 @@ class MongoStore(collections.MutableMapping):
 
     def __init__(self, mongo_collection, context):
         """
-        read collection to dictionary
-        :param mongo_collection: pymongo collection
+        :param mongo_collection: collection to read/cache
         :param context: context manager for collection operations
         """
         self._collection = mongo_collection
         self._context = context
+        self._store = {}
+        self.reload()
+
+    def reload(self):
+        """read collection to dictionary"""
         with self._context:
             rows = tuple(self._collection.find({}))
-        self._store = {
-            row[PRIMARY_KEY]: datastruct.ImmutableDict(row) for row in rows
-        }
+            self._store = {
+                row[PRIMARY_KEY]: datastruct.ImmutableDict(row) for row in rows
+            }
 
     def __setitem__(self, key, value):
         """store key-value to collection (lazy if value isn't changed)"""

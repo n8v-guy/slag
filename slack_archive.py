@@ -242,9 +242,11 @@ class SlackArchive(object):
         # TODO add logging around
         with zipfile.ZipFile(LOCAL_ARCHIVE_FILE) as archive:
             self.import_users(archive)
+            self.people.reload()
             # import channels
             with archive.open('channels.json') as channel_list:
                 channels = self.import_channels(channel_list)
+                self.streams.reload()
                 # import messages
                 result, types_new = self.import_messages(channels, archive)
                 self.database.messages.create_index('ts')
