@@ -70,8 +70,8 @@ class WebServer(FlaskExt):
         with self.app_context() as ctx:
             self.tokens = store.TokenStore(self.mongo.db.tokens, ctx,
                                            key=os.environ['CRYPTO_KEY'])
-            self.archive = slack_archive.SlackArchive(self.mongo.db, ctx,
-                                                      self.tokens)
+            self.archive = slack_archive.SlackArchive(
+                self.mongo.db, ctx, self.tokens, os.environ['SLACK_TOKEN'])
 
     @staticmethod
     def start():
@@ -326,7 +326,7 @@ class WebServer(FlaskExt):
                                                'msg': str(err)})
             return WebServer._basic_page('Auth error',
                                          'Auth error: ' + str(err))
-        except AssertionError:  # noinspection PyUnboundLocalVariable
+        except AssertionError:
             return WebServer._basic_page('Wrong team',
                                          'Wrong team: ' + api_auth['team'])
         return self._login_success(token, api_auth, identity_only)
