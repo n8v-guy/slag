@@ -49,9 +49,9 @@ class Scheduler(object):
 
 
 class SlackArchive(object):
-    PUBLIC_CHANNEL = 0
-    PRIVATE_GROUP = 1  # no MPIMs here
-    IM_GROUP = 2  # MPIMs are here
+    PUBLIC = 0
+    PRIVATE = 1  # no MPIMs here
+    DIRECT = 2  # MPIMs are here
 
     def __init__(self, db, ctx, tokens, api_key):
         self.database = db
@@ -83,26 +83,33 @@ class SlackArchive(object):
         return results
 
     def filter_streams(self, user_info, filter_name):
-        my_channels = self.people[user_info['user']].get('channels')
-        if filter_name == 'my' and user_info['full_access'] and my_channels:
-            channels = [self.streams[k]
-                        for k, v in self.streams.items()
-                        if k in my_channels]
-        elif filter_name == 'all':
-            channels = [self.streams[k]
-                        for k, v in self.streams.items()
-                        if v['type'] == 0]
+        cur_person = self.people[user_info['user']]
+        public = [self.streams[chan]
+                  for chan in cur_person.get('channels', [])]
+        private = [self.streams[group]
+                   for group in cur_person.get('groups', [])]
+        direct = [self.streams[im] for im in cur_person.get('ims', [])]
+        if filter_name == 'all':
+            public = [v for v in self.streams.values()
+                      if v['type'] == SlackArchive.PUBLIC]
         elif filter_name == 'archive':
-            channels = [self.streams[k]
-                        for k, v in self.streams.items()
-                        if v['type'] == 0 and not v['active']]
-        else:
-            filter_name = 'active'  # set default
-            channels = [self.streams[k]
-                        for k, v in self.streams.items()
-                        if v['type'] == 0 and v['active']]
-        channels.sort(key=lambda ch: ch['name'])
-        return channels, filter_name
+            public = [v for v in self.streams.values()
+                      if v['type'] == SlackArchive.PUBLIC and not v['active']]
+            private = [v for v in private if not v['active']]
+            direct = [v for v in direct if not v['active']]
+        else:  # 'my', 'active' or unknown
+            if filter_name == 'my' and user_info['full_access']:
+                public = [v for v in public if v['active']]
+            else:
+                filter_name = 'active'  # reset default
+                public = [v for v in self.streams.values()
+                          if v['type'] == SlackArchive.PUBLIC and v['active']]
+            private = [v for v in private if v['active']]
+            direct = [v for v in direct if v['active']]
+        public.sort(key=lambda ch: ch['name'])
+        private.sort(key=lambda ch: ch['name'])
+        direct.sort(key=lambda ch: ch['name'])
+        return public, private, direct, filter_name
 
     @staticmethod
     def _message_uid(stream, timestamp):
@@ -139,7 +146,7 @@ class SlackArchive(object):
             pins = SlackArchive._pins_from_stream(channel)
             bulk.find({'_id': channel['id']}).upsert().update(
                 {'$set': {'name': channel['name'],
-                          'type': SlackArchive.PUBLIC_CHANNEL,
+                          'type': SlackArchive.PUBLIC,
                           'active': not channel['is_archived'],
                           'topic': channel['topic']['value'],
                           'purpose': channel['purpose']['value'],
@@ -259,7 +266,7 @@ class SlackArchive(object):
                 self.update_streams(groups, user_info['user'])
                 self.log.info('Fetch direct msgs for ' + user_info['login'])
                 ims = Slacker(token).im.list().body
-                self.people.set_field(user_info['user'], 'dm',
+                self.people.set_field(user_info['user'], 'ims',
                                       SlackArchive._filter_im_ids(groups, ims))
                 self.update_streams(ims, user_info['user'])
             except Error as err:
@@ -277,7 +284,7 @@ class SlackArchive(object):
         item_type = SlackArchive._stream_type(item)
 
         stream['name'] = item.get('name')
-        if item_type == SlackArchive.IM_GROUP:
+        if item_type == SlackArchive.DIRECT:
             members = item.get('members', [])
             if not members:
                 assert src_user is not None
@@ -289,7 +296,6 @@ class SlackArchive(object):
         stream['active'] = not is_archived
         stream['topic'] = ('' if 'topic' not in item
                            else item['topic']['value'])
-        # TODO call *streams*.info for pins
         pins = SlackArchive._pins_from_stream(item)
         if pins:
             stream['pins'] = pins
@@ -301,12 +307,12 @@ class SlackArchive(object):
     @staticmethod
     def _stream_type(item):
         if item.get('is_mpim', False) or item.get('is_im', False):
-            item_type = SlackArchive.IM_GROUP
+            item_type = SlackArchive.DIRECT
         elif item.get('is_group', False):
-            item_type = SlackArchive.PRIVATE_GROUP
+            item_type = SlackArchive.PRIVATE
         else:
             assert item['is_channel']
-            item_type = SlackArchive.PUBLIC_CHANNEL
+            item_type = SlackArchive.PUBLIC
         return item_type
 
     def update_streams(self, api_body, src_user=None):

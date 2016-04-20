@@ -4,6 +4,7 @@
 
 import collections
 import functools
+import itertools
 import os
 import time
 
@@ -202,7 +203,7 @@ class WebServer(FlaskExt):
 
     @FlaskExt.route('/search')
     def search(self):
-        """3 cases here: search everywhere/in channel/by message"""
+        """3 cases here: search everywhere/in stream/by context(message)"""
         user = self.tokens[flask.request.cookies.get('auth')]
         query = flask.request.args.get('q', '')
         stream = flask.request.args.get('s', '')
@@ -219,9 +220,12 @@ class WebServer(FlaskExt):
         elif stream != '':
             results = self.archive.find_messages_in_stream(query, stream, page)
         else:
-            channels, _ = self.archive.filter_streams(user, 'all')
-            channels = [chan['_id'] for chan in channels]
-            results = self.archive.find_messages(query, channels, page)
+            streams = self.archive.filter_streams(user, 'all')
+            streams = streams[:-1]  # public/private/direct, skip filter name
+            # chain tuple of lists to flat list
+            streams_list = itertools.chain(*streams)
+            stream_ids = [stream_item['_id'] for stream_item in streams_list]
+            results = self.archive.find_messages(query, stream_ids, page)
         return flask.render_template(
             'search.htm', results=results, total=len(results), q=query,
             s=stream, c=context, p=page,
@@ -237,9 +241,10 @@ class WebServer(FlaskExt):
                                            's': stream})
         if stream == '':
             filter_name = flask.request.args.get('filter', 'my')
-            channels, filter_name = self.archive.filter_streams(user_info,
-                                                                filter_name)
-            return flask.render_template('browse.htm', channels=channels,
+            public, private, direct, filter_name = self.archive.filter_streams(
+                user_info, filter_name)
+            return flask.render_template('browse.htm', channels=public,
+                                         groups=private, ims=direct,
                                          f=filter_name)
         results = self.archive.stream_messages(stream, page)
         return flask.render_template(
