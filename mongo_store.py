@@ -45,7 +45,7 @@ class MongoStore(collections.MutableMapping):
     def set_field(self, key, field, field_value):
         """Set single field in value dict, as value is immutable"""
         if key not in self._store:
-            raise KeyError()
+            raise KeyError(key)
         value = dict(self._store[key])
         value[field] = field_value
         self[key] = value
@@ -53,7 +53,7 @@ class MongoStore(collections.MutableMapping):
     def __delitem__(self, key):
         """remove row from collection by key"""
         if key not in self._store.keys():
-            raise KeyError()
+            raise KeyError(key)
         with self._context:
             self._collection.delete_one({PRIMARY_KEY: key})
         del self._store[key]

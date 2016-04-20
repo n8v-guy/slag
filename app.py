@@ -340,7 +340,7 @@ class WebServer(FlaskExt):
                                            'user': api_user_info['user']})
         response.set_cookie('auth', auth_key,
                             expires=WebServer.cookies_expire_date())
-        self.archive.channels_fetch(token)
+        self.archive.streams_fetch(token)
         return response
 
 

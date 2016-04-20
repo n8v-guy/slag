@@ -31,8 +31,8 @@ class Scheduler(object):
     @staticmethod
     def setup_scheduler(server):
         # TODO: user-oriented handling on timer
-        schedule.every(30).minutes.do(server.channels_fetch_all)
-        schedule.every(30).minutes.do(server.tokens_validation)
+        schedule.every(3).hours.do(server.tokens_validation)
+        schedule.every(15).minutes.do(server.streams_fetch_all)
 
     def background_task(self):
         schedule.run_pending()
@@ -203,30 +203,38 @@ class SlackArchive(object):
             print('Valid token')
             self.tokens.upsert(token, user_info)
 
-    def channels_fetch_all(self):
+    def streams_fetch_all(self):
         print('Fetching user channels here')
         for token in self.tokens.decrypt_keys_map().keys():
             time.sleep(1)
-            self.channels_fetch(token)
+            self.streams_fetch(token)
 
-    def channels_fetch(self, token):
+    def streams_fetch(self, token):
         enc_key = self.tokens.get_key_by_known_token(token)
         user_info = self.tokens[enc_key]
         if user_info['full_access']:
-            print('Fetch channels for', user_info['login'])
             try:
-                all_ch = Slacker(token).channels.list(exclude_archived=1).body
+                # TODO: process archived separately
+                print('Fetch channels for', user_info['login'])
+                all_ch = Slacker(token).channels.list().body
                 self.people.set_field(user_info['user'], 'channels',
                                       SlackArchive.filter_channel_ids(all_ch))
+                print('Fetch private groups for', user_info['login'])
+                grps = Slacker(token).groups.list().body
+                self.people.set_field(user_info['user'], 'groups',
+                                      SlackArchive.filter_ids('groups', grps))
+                print('Fetch direct messages for', user_info['login'])
+                ims = Slacker(token).im.list().body
+                self.people.set_field(user_info['user'], 'dm',
+                                      SlackArchive.filter_ids('ims', ims))
             except Error as err:
                 self.database.z_errors.insert_one({'_id': time.time(),
                                                    'ctx': 'channels_fetch',
                                                    'msg': str(err)})
-                print('Fetch channels error:', err)
+                print('Fetch streams error:', err)
                 # full access was revoked
                 if str(err) == 'missing_scope':
-                    # TODO: sync field names between tokens storage and API
-                    self.tokens.set_field(user_info['user'],
+                    self.tokens.set_field(enc_key,
                                           'full_access', False)
 
     @staticmethod
@@ -235,6 +243,13 @@ class SlackArchive(object):
             channel['id']
             for channel in channels['channels']
             if channel['is_member']
+            ]
+
+    @staticmethod
+    def filter_ids(list_id, groups):
+        return [
+            channel['id']
+            for channel in groups[list_id]
             ]
 
     def import_archive(self):
