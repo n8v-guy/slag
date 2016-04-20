@@ -21,18 +21,11 @@ MESSAGES_NUMBER_PER_SEARCH_REQUEST = 100
 class Scheduler(object):
     bg_task = None
 
-    def __init__(self, server):
+    def __init__(self, server_callback):
         # scheduler in background
         atexit.register(self.background_stop)
-        self.setup_scheduler(server)
+        server_callback(schedule)
         self.background_task()
-
-    @staticmethod
-    def setup_scheduler(server):
-        # TODO: user-oriented handling on timer
-        schedule.every(3).hours.do(server.tokens_validation)
-        schedule.every(1).hour.do(server.people_fetch_all)
-        schedule.every(1).hour.do(server.streams_fetch_all)
 
     def background_task(self):
         schedule.run_pending()
@@ -55,20 +48,32 @@ class SlackArchive(object):
 
     def __init__(self, db, ctx, tokens, api_key):
         self.database = db
+        self.log = SlackArchive.get_logger()
         self.people = mongo_store.MongoStore(self.database.users, ctx)
         self.streams = mongo_store.MongoStore(self.database.streams, ctx)
         self.tokens = tokens
-        self.scheduler = Scheduler(self)
         self.api_handle = Slacker(api_key)
-        self.log = logging.getLogger(__name__)
-        self.log.setLevel(logging.INFO)
+        self.timers = Scheduler(self._setup_scheduler)
+
+    def _setup_scheduler(self, scheduler):
+        # TODO: user-oriented handling on timer
+        scheduler.every(3).hours.do(self.tokens_validation)
+        scheduler.every(1).hour.do(self.people_fetch_all)
+        scheduler.every(1).hour.do(self.streams_fetch_all)
+        scheduler.every(30).minutes.do(self.fetch_public_messages)
+
+    @staticmethod
+    def get_logger():
+        log = logging.getLogger(__name__)
+        log.setLevel(logging.INFO)
         log_handler = logging.StreamHandler()
         log_handler.setFormatter(
             logging.Formatter('[%(levelname)s] %(message)s @ '
                               '%(filename)s:%(lineno)d, '
                               'at %(asctime)s in %(funcName)s, '
                               ' %(threadName)s(%(thread)d)'))
-        self.log.addHandler(log_handler)
+        log.addHandler(log_handler)
+        return log
 
     def _prepare_messages(self, query):
         results = []
@@ -183,11 +188,14 @@ class SlackArchive(object):
                  if not n.endswith(os.path.sep)]
         bulk = self.database.messages.initialize_ordered_bulk_op()
         for channel in channels:
+            last_msg_ts = 0.0
             for fname in [n for n in files
                           if n.startswith(channel['name'] + os.path.sep)]:
                 with archive.open(fname) as day_export:
-                    SlackArchive._import_messages_day(
+                    last_ts_for_day = SlackArchive._import_messages_day(
                         bulk, channel, day_export, types_ignore, types_import)
+                last_msg_ts = max(last_msg_ts, last_ts_for_day)
+            self.streams.set_field(channel['id'], 'last_msg', last_msg_ts)
         return bulk.execute(), types_ignore
 
     @staticmethod
@@ -208,6 +216,7 @@ class SlackArchive(object):
                           'msg': msg['text'],
                           'from': msg['user'],
                           'to': channel['id']}})
+        return 0.0 if not msgs else float(msgs[-1]['ts'])
 
     def tokens_validation(self):
         self.log.info('Validating tokens')
@@ -230,8 +239,9 @@ class SlackArchive(object):
         self.log.info('Fetching people list here')
         try:
             people = self.api_handle.users.list().body
-        except Error:
-            self.log.exception('Fetching people list exception')
+        except Error as err:
+            self.log.exception('Fetching people list exception ' + str(err))
+            return
         # TODO add bulk_op wrapper for mongo_store
         for person in people['members']:
             item_id = person['id']
@@ -277,6 +287,30 @@ class SlackArchive(object):
                 # full access was revoked
                 if str(err) == 'missing_scope':
                     self.tokens.set_field(enc_key, 'full_access', False)
+
+    def fetch_public_messages(self):
+        self.log.info('Fetching public channels messages')
+        try:
+            chans_list = self.api_handle.channels.list().body['channels']
+        except Error as err:
+            self.database.z_errors.insert_one({'_id': time.time(),
+                                               'ctx': 'fetch_public_messages',
+                                               'msg': str(err)})
+            self.log.exception('Fetch public messages error: ' + str(err))
+            return
+        self.fetch_stream_messages(chans_list)
+        self.log.info('Fetching public channels messages complete')
+
+    def fetch_stream_messages(self, streams_list):
+        for stream in streams_list:
+            last_msg = self.streams[stream['id']].get('last_msg', 0.0)
+            msgs = self.api_handle.channels.history(  # TODO pass method by arg
+                stream['id'], oldest=last_msg, count=1000, inclusive=1).body
+            if msgs['is_limited']:
+                break
+            if msgs['oldest'] != str(last_msg):
+                break
+            self.log.info('Fetching ' + self.streams[stream['id']]['name'])
 
     def _update_stream(self, item, src_user=None):
         sid = item['id']
