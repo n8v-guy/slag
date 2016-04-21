@@ -57,10 +57,10 @@ class SlackArchive(object):
 
     def _setup_scheduler(self, scheduler):
         # TODO: user-oriented handling on timer
-        scheduler.every(3).hours.do(self.tokens_validation)
+        scheduler.every(1).hours.do(self.tokens_validation)
         scheduler.every(1).hour.do(self.people_fetch_all)
         scheduler.every(1).hour.do(self.streams_fetch_all)
-        scheduler.every(30).minutes.do(self.fetch_public_messages)
+        scheduler.every(10).minutes.do(self.fetch_public_messages)
 
     @staticmethod
     def get_logger():
@@ -68,10 +68,10 @@ class SlackArchive(object):
         log.setLevel(logging.INFO)
         log_handler = logging.StreamHandler()
         log_handler.setFormatter(
-            logging.Formatter('[%(levelname)s] %(message)s @ '
-                              '%(filename)s:%(lineno)d, '
-                              'at %(asctime)s in %(funcName)s, '
-                              ' %(threadName)s(%(thread)d)'))
+            logging.Formatter('%(levelname)-7s | %(message)-60s | '
+                              '%(filename)s:%(lineno)d | '
+                              '%(asctime)s | %(funcName)s | '
+                              '%(threadName)s'))
         log.addHandler(log_handler)
         return log
 
@@ -170,8 +170,26 @@ class SlackArchive(object):
         return pins
 
     def _import_messages(self, channels, archive):
-        # TODO check additional useful fields for these types
-        # TODO formatting at https://api.slack.com/docs/formatting/builder
+        types_import, types_ignore = SlackArchive._message_type_sets()
+        files = [n for n in archive.namelist()
+                 if not n.endswith(os.path.sep)]
+        bulk = self.database.messages.initialize_ordered_bulk_op()
+        for channel in channels:
+            last_msg_ts = '0'
+            for fname in [n for n in files
+                          if n.startswith(channel['name'] + os.path.sep)]:
+                with archive.open(fname) as day_export:
+                    msgs = json.loads(day_export.read())
+                    _, last_import_ts = SlackArchive._import_messages_bulk(
+                        bulk, channel, msgs, types_import, types_ignore)
+                if float(last_import_ts) > float(last_msg_ts):
+                    last_msg_ts = last_import_ts
+            # FIXME TODO Bad transaction: last_msg is set before applying bulk
+            self.streams.set_field(channel['id'], 'last_msg', last_msg_ts)
+        return bulk.execute(), types_ignore
+
+    @staticmethod
+    def _message_type_sets():
         types_import = {
             # useful
             '', 'me_message',
@@ -184,39 +202,30 @@ class SlackArchive(object):
             'channel_archive', 'channel_unarchive'}
         # format is not supported yet
         types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
-        files = [n for n in archive.namelist()
-                 if not n.endswith(os.path.sep)]
-        bulk = self.database.messages.initialize_ordered_bulk_op()
-        for channel in channels:
-            last_msg_ts = 0.0
-            for fname in [n for n in files
-                          if n.startswith(channel['name'] + os.path.sep)]:
-                with archive.open(fname) as day_export:
-                    last_ts_for_day = SlackArchive._import_messages_day(
-                        bulk, channel, day_export, types_ignore, types_import)
-                last_msg_ts = max(last_msg_ts, last_ts_for_day)
-            self.streams.set_field(channel['id'], 'last_msg', last_msg_ts)
-        return bulk.execute(), types_ignore
+        return types_import, types_ignore
 
     @staticmethod
-    def _import_messages_day(bulk, channel, day_export,
-                             types_ignore, types_import):
-        msgs = json.loads(day_export.read())
+    def _import_messages_bulk(bulk, channel, msgs,
+                              types_import, types_ignore):
+        # no sort for API results (default sorting method), reverse for exports
+        msgs = sorted(msgs, key=lambda m: float(m['ts']), reverse=True)
+        msg_counter = 0
         for msg in msgs:
-            stype = msg.get('subtype', '')
-            if stype not in types_import:
-                if stype not in types_ignore:
-                    types_ignore.add(stype)
+            subtype = msg.get('subtype', '')
+            if subtype not in types_import:
+                if subtype not in types_ignore:
+                    types_ignore.add(subtype)
                 continue
-            msg_id = SlackArchive._message_uid(channel['id'],
-                                               msg['ts'])
+            msg_counter += 1
+            msg_id = SlackArchive._message_uid(channel['id'], msg['ts'])
             bulk.find({'_id': msg_id}).upsert().update(
                 {'$set': {'ts': float(msg['ts']),
-                          'type': hash(stype),
+                          'type': hash(subtype),
+                          # TODO check other useful fields
                           'msg': msg['text'],
                           'from': msg['user'],
                           'to': channel['id']}})
-        return 0.0 if not msgs else float(msgs[-1]['ts'])
+        return msg_counter, msgs[0]['ts']
 
     def tokens_validation(self):
         self.log.info('Validating tokens')
@@ -229,7 +238,7 @@ class SlackArchive(object):
                 self.database.z_errors.insert_one({'_id': time.time(),
                                                    'ctx': 'tokens_validation',
                                                    'msg': str(err)})
-                self.log.exception('Error for this token:' + str(token))
+                self.log.exception('Error %s for token %s', str(err), token)
                 del self.tokens[enc_key]
                 continue
             self.log.info('Valid token')
@@ -240,7 +249,7 @@ class SlackArchive(object):
         try:
             people = self.api_handle.users.list().body
         except Error as err:
-            self.log.exception('Fetching people list exception ' + str(err))
+            self.log.exception('Fetching people list exception %s', str(err))
             return
         # TODO add bulk_op wrapper for mongo_store
         for person in people['members']:
@@ -264,17 +273,17 @@ class SlackArchive(object):
         user_info = self.tokens[enc_key]
         if user_info['full_access']:
             try:
-                self.log.info('Fetch channels for ' + user_info['login'])
+                self.log.info('Fetch channels for %s', user_info['login'])
                 all_ch = Slacker(token).channels.list().body
                 self.people.set_field(user_info['user'], 'channels',
                                       SlackArchive._filter_channel_ids(all_ch))
-                self.update_streams(all_ch)
-                self.log.info('Fetch private groups for ' + user_info['login'])
+                self.update_streams(all_ch)  # not a duplicate op: fight races
+                self.log.info('Fetch %s\'s private groups', user_info['login'])
                 groups = Slacker(token).groups.list().body
                 self.people.set_field(user_info['user'], 'groups',
                                       SlackArchive._filter_group_ids(groups))
                 self.update_streams(groups, user_info['user'])
-                self.log.info('Fetch direct msgs for ' + user_info['login'])
+                self.log.info('Fetch direct msgs for %s', user_info['login'])
                 ims = Slacker(token).im.list().body
                 self.people.set_field(user_info['user'], 'ims',
                                       SlackArchive._filter_im_ids(groups, ims))
@@ -283,7 +292,7 @@ class SlackArchive(object):
                 self.database.z_errors.insert_one({'_id': time.time(),
                                                    'ctx': 'channels_fetch',
                                                    'msg': str(err)})
-                self.log.exception('Fetch streams error: ' + str(err))
+                self.log.exception('Fetch streams error %s', str(err))
                 # full access was revoked
                 if str(err) == 'missing_scope':
                     self.tokens.set_field(enc_key, 'full_access', False)
@@ -291,26 +300,69 @@ class SlackArchive(object):
     def fetch_public_messages(self):
         self.log.info('Fetching public channels messages')
         try:
-            chans_list = self.api_handle.channels.list().body['channels']
+            chans_list = self.api_handle.channels.list().body
         except Error as err:
             self.database.z_errors.insert_one({'_id': time.time(),
                                                'ctx': 'fetch_public_messages',
                                                'msg': str(err)})
-            self.log.exception('Fetch public messages error: ' + str(err))
+            self.log.exception('Fetch public messages error %s', str(err))
             return
-        self.fetch_stream_messages(chans_list)
+        self.update_streams(chans_list)
+        self.fetch_stream_messages(chans_list['channels'])
         self.log.info('Fetching public channels messages complete')
 
     def fetch_stream_messages(self, streams_list):
+        """
+        # exclude archived
+        streams_list = [stream for stream in streams_list
+                        if not stream['is_archived']]
+
+        def streams_mru(api_stream):
+            timestamp = self.streams[api_stream['id']].get('last_msg', '0')
+            return time.time()-int(float(timestamp))
+
+        # most recently used streams will be updated first
+        streams_list = sorted(streams_list, key=streams_mru)
+        """
+        pos = 0
         for stream in streams_list:
-            last_msg = self.streams[stream['id']].get('last_msg', 0.0)
-            msgs = self.api_handle.channels.history(  # TODO pass method by arg
-                stream['id'], oldest=last_msg, count=1000, inclusive=1).body
-            if msgs['is_limited']:
+            pos += 1
+            self.log.info('[%d/%d] Fetching messages from %s',
+                          pos, len(streams_list), stream['name'])
+            self._fetch_single_stream_messages(stream)
+
+    def _fetch_single_stream_messages(self, stream):
+        last_msg_ts = self.streams[stream['id']].get('last_msg', '0')
+        bulk = self.database.messages.initialize_ordered_bulk_op()
+        bulk_total_size = 0
+        while True:
+            time.sleep(1)
+            has_more, last_msg_ts, bulk_count = self._iterate_messages_history(
+                bulk, stream, last_msg_ts)
+            bulk_total_size += bulk_count
+            if not has_more:
                 break
-            if msgs['oldest'] != str(last_msg):
-                break
-            self.log.info('Fetching ' + self.streams[stream['id']]['name'])
+        if bulk_total_size:
+            bulk.execute()
+            if last_msg_ts != '0':  # import non-contiguous history
+                self.streams.set_field(stream['id'], 'last_msg', last_msg_ts)
+            self.log.info('Fetched %s new message(s) from %s',
+                          bulk_total_size, stream['name'])
+
+    def _iterate_messages_history(self, bulk, stream, last_msg_ts):
+        msgs = self.api_handle.channels.history(  # TODO pass method by arg
+            stream['id'], oldest=last_msg_ts,
+            inclusive=0, count=1000).body
+        types_import, types_ignore = SlackArchive._message_type_sets()
+        if msgs['messages']:
+            bulk_op_count, last_import_ts = SlackArchive._import_messages_bulk(
+                bulk, stream, msgs['messages'], types_import, types_ignore)
+        else:
+            bulk_op_count, last_import_ts = 0, last_msg_ts
+        if msgs['is_limited']:
+            self.log.warn('Limited stream history for %s', stream['name'])
+            return False, '0', bulk_op_count
+        return msgs['has_more'], last_import_ts, bulk_op_count
 
     def _update_stream(self, item, src_user=None):
         sid = item['id']
@@ -336,6 +388,7 @@ class SlackArchive(object):
         stream['type'] = item_type
         stream['purpose'] = ('' if 'purpose' not in item
                              else item['purpose']['value'])
+        # TODO Add cheap method for mongo_store for this
         self.streams[sid] = stream
 
     @staticmethod
