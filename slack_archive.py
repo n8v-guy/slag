@@ -1,5 +1,6 @@
 # pylint: disable=fixme,missing-docstring
 import atexit
+import functools
 import json
 import logging
 import os
@@ -56,11 +57,10 @@ class SlackArchive(object):
         self.timers = Scheduler(self._setup_scheduler)
 
     def _setup_scheduler(self, scheduler):
-        # TODO: user-oriented handling on timer
-        scheduler.every(1).hours.do(self.tokens_validation)
-        scheduler.every(1).hour.do(self.people_fetch_all)
-        scheduler.every(1).hour.do(self.streams_fetch_all)
-        scheduler.every(10).minutes.do(self.fetch_public_messages)
+        scheduler.every(10).minutes.do(self.tokens_validation)
+        scheduler.every(10).minutes.do(self.people_fetch_all)
+        scheduler.every(30).minutes.do(self.fetch_public_messages)
+        scheduler.every(30).minutes.do(self.fetch_private_messages)
 
     @staticmethod
     def get_logger():
@@ -68,7 +68,7 @@ class SlackArchive(object):
         log.setLevel(logging.INFO)
         log_handler = logging.StreamHandler()
         log_handler.setFormatter(
-            logging.Formatter('%(levelname)-7s | %(message)-60s | '
+            logging.Formatter('%(levelname)-7s | %(message)-80s | '
                               '%(filename)s:%(lineno)d | '
                               '%(asctime)s | %(funcName)s | '
                               '%(threadName)s'))
@@ -259,14 +259,6 @@ class SlackArchive(object):
             item['login'] = person['name']
             item['avatar'] = person['profile']['image_72']
             self.people[item_id] = item
-        self.log.info('Fetching people complete')
-
-    def streams_fetch_all(self):
-        self.log.info('Fetching person streams here')
-        for token in self.tokens.decrypt_keys_map().keys():
-            time.sleep(1)
-            self.streams_fetch(token)
-        self.log.info('Fetching person streams complete')
 
     def streams_fetch(self, token):
         enc_key = self.tokens.get_key_by_known_token(token)
@@ -297,6 +289,47 @@ class SlackArchive(object):
                 if str(err) == 'missing_scope':
                     self.tokens.set_field(enc_key, 'full_access', False)
 
+    def fetch_private_messages(self):
+        self.log.info('Fetching private groups & ims messages')
+        for token, enc_key in self.tokens.decrypt_keys_map().items():
+            user_info = self.tokens[enc_key]
+            if not user_info['full_access']:
+                continue
+            self.streams_fetch(token)
+            api_handle = Slacker(token)
+            self.log.info('Fetching private groups for %s', user_info['login'])
+            self._fetch_person_groups_history(user_info, api_handle)
+            self.log.info('Fetching private ims for %s', user_info['login'])
+            self._fetch_person_ims_history(user_info, api_handle)
+
+    def _fetch_person_groups_history(self, user_info, api_handle):
+        try:
+            groups = api_handle.groups.list().body
+        except Error as err:
+            self.database.z_errors.insert_one({'_id': time.time(),
+                                               'ctx': ('fetch_person_groups ' +
+                                                       user_info['login']),
+                                               'msg': str(err)})
+            self.log.exception('Fetch person groups error %s', str(err))
+            return
+        api_loader = functools.partial(api_handle.groups.history,
+                                       inclusive=0, count=1000)
+        self._fetch_stream_messages(api_loader, groups['groups'])
+
+    def _fetch_person_ims_history(self, user_info, api_handle):
+        try:
+            ims = api_handle.im.list().body
+        except Error as err:
+            self.database.z_errors.insert_one({'_id': time.time(),
+                                               'ctx': ('fetch_person_ims ' +
+                                                       user_info['login']),
+                                               'msg': str(err)})
+            self.log.exception('Fetch person groups error %s', str(err))
+            return
+        api_loader = functools.partial(api_handle.im.history,
+                                       inclusive=0, count=1000)
+        self._fetch_stream_messages(api_loader, ims['ims'])
+
     def fetch_public_messages(self):
         self.log.info('Fetching public channels messages')
         try:
@@ -308,37 +341,27 @@ class SlackArchive(object):
             self.log.exception('Fetch public messages error %s', str(err))
             return
         self.update_streams(chans_list)
-        self.fetch_stream_messages(chans_list['channels'])
-        self.log.info('Fetching public channels messages complete')
+        api_loader = functools.partial(self.api_handle.channels.history,
+                                       inclusive=0, count=1000)
+        self._fetch_stream_messages(api_loader, chans_list['channels'])
 
-    def fetch_stream_messages(self, streams_list):
-        """
-        # exclude archived
-        streams_list = [stream for stream in streams_list
-                        if not stream['is_archived']]
-
-        def streams_mru(api_stream):
-            timestamp = self.streams[api_stream['id']].get('last_msg', '0')
-            return time.time()-int(float(timestamp))
-
-        # most recently used streams will be updated first
-        streams_list = sorted(streams_list, key=streams_mru)
-        """
+    def _fetch_stream_messages(self, api_loader, streams_list):
         pos = 0
         for stream in streams_list:
             pos += 1
             self.log.info('[%d/%d] Fetching messages from %s',
-                          pos, len(streams_list), stream['name'])
-            self._fetch_single_stream_messages(stream)
+                          pos, len(streams_list),
+                          self.streams[stream['id']]['name'])
+            self._fetch_single_stream_messages(api_loader, stream)
 
-    def _fetch_single_stream_messages(self, stream):
+    def _fetch_single_stream_messages(self, api_loader, stream):
         last_msg_ts = self.streams[stream['id']].get('last_msg', '0')
         bulk = self.database.messages.initialize_ordered_bulk_op()
         bulk_total_size = 0
         while True:
             time.sleep(1)
             has_more, last_msg_ts, bulk_count = self._iterate_messages_history(
-                bulk, stream, last_msg_ts)
+                api_loader, stream, last_msg_ts, bulk)
             bulk_total_size += bulk_count
             if not has_more:
                 break
@@ -347,12 +370,10 @@ class SlackArchive(object):
             if last_msg_ts != '0':  # import non-contiguous history
                 self.streams.set_field(stream['id'], 'last_msg', last_msg_ts)
             self.log.info('Fetched %s new message(s) from %s',
-                          bulk_total_size, stream['name'])
+                          bulk_total_size, self.streams[stream['id']]['name'])
 
-    def _iterate_messages_history(self, bulk, stream, last_msg_ts):
-        msgs = self.api_handle.channels.history(  # TODO pass method by arg
-            stream['id'], oldest=last_msg_ts,
-            inclusive=0, count=1000).body
+    def _iterate_messages_history(self, api_loader, stream, last_msg_ts, bulk):
+        msgs = api_loader(stream['id'], oldest=last_msg_ts).body
         types_import, types_ignore = SlackArchive._message_type_sets()
         if msgs['messages']:
             bulk_op_count, last_import_ts = SlackArchive._import_messages_bulk(
@@ -360,7 +381,8 @@ class SlackArchive(object):
         else:
             bulk_op_count, last_import_ts = 0, last_msg_ts
         if msgs['is_limited']:
-            self.log.warning('Limited stream history for %s', stream['name'])
+            self.log.warning('Limited stream history for %s',
+                             self.streams[stream['id']]['name'])
             return False, '0', bulk_op_count
         return msgs['has_more'], last_import_ts, bulk_op_count
 
@@ -376,7 +398,7 @@ class SlackArchive(object):
                 assert src_user is not None
                 members = [src_user, item['user']]
             logins = ['@'+self.people[m]['login'] for m in members]
-            stream['name'] = ', '.join(sorted(logins))
+            stream['name'] = '+'.join(sorted(logins))
         is_archived = (item.get('is_archived', False) or
                        item.get('is_user_deleted', False))
         stream['active'] = not is_archived
