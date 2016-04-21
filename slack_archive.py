@@ -524,3 +524,15 @@ class SlackArchive(object):
             skip=page * MESSAGES_NUMBER_PER_SEARCH_REQUEST,
             limit=MESSAGES_NUMBER_PER_SEARCH_REQUEST)
         return self._prepare_messages(query)
+
+    def has_stream_access(self, user_info, stream_id):
+        if stream_id not in self.streams:
+            return False
+        if self.streams[stream_id]['type'] == SlackArchive.PUBLIC:
+            return True
+        cur_person = self.people[user_info['user']]
+        if stream_id in cur_person.get('groups', []):
+            return True
+        if stream_id in cur_person.get('ims', []):
+            return True
+        return False

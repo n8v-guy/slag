@@ -215,6 +215,8 @@ class WebServer(FlaskExt):
         results = []
         if query == '':
             return flask.render_template('search.htm', results=results)
+        if stream != '' and not self.archive.has_stream_access(user, stream):
+            return self.report_access_denied()
         if context != '':
             results = self.archive.find_messages_around(context, stream, page)
         elif stream != '':
@@ -231,6 +233,17 @@ class WebServer(FlaskExt):
             s=stream, c=context, p=page,
             n=slack_archive.MESSAGES_NUMBER_PER_SEARCH_REQUEST)
 
+    def report_access_denied(self):
+        user_info = self.tokens[flask.request.cookies.get('auth')]
+        self.mongo.db.z_access.insert_one({'_id': time.time(),
+                                           'user': user_info['login'],
+                                           'page': flask.request.url})
+        return WebServer._basic_page(
+            'Access denied',
+            '<div class="jumbotron" align="center">'
+            '  <h1>Access denied</h1>'
+            '</div>')
+
     @FlaskExt.route('/browse')
     def browse(self):
         user_info = self.tokens[flask.request.cookies.get('auth')]
@@ -246,6 +259,8 @@ class WebServer(FlaskExt):
             return flask.render_template('browse.htm', channels=public,
                                          groups=private, ims=direct,
                                          f=filter_name)
+        if not self.archive.has_stream_access(user_info, stream):
+            return self.report_access_denied()
         results = self.archive.stream_messages(stream, page)
         return flask.render_template(
             'stream.htm', results=results, total=len(results), s=stream,
