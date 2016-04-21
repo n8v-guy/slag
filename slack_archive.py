@@ -540,7 +540,8 @@ class SlackArchive(object):
         return False
 
     def people_stat(self):
-        total = sum([person['active'] for person in self.people.values()])
+        total = sum([person.get('active', False)
+                     for person in self.people.values()])
         tokens = len(self.tokens)
         advanced = sum([person['full_access']
                         for person in self.tokens.values()])
