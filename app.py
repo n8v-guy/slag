@@ -167,6 +167,14 @@ class WebServer(FlaskExt):
             return flask.redirect('/browse', 302)
         return WebServer._redirect_page('/login', 'Auth required')
 
+    @FlaskExt.route('/stat')
+    def stat(self):
+        return WebServer._basic_page(
+            'Auth progress',
+            '<div class="jumbotron" align="center">'
+            '  <h1>' + self.archive.people_stat() + '</h1>'
+            '</div>')
+
     @FlaskExt.route('/login')
     def login(self):
         if flask.request.args.get('code'):

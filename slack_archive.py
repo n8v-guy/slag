@@ -258,6 +258,8 @@ class SlackArchive(object):
             item['name'] = person['profile']['real_name']
             item['login'] = person['name']
             item['avatar'] = person['profile']['image_72']
+            item['active'] = (not person.get('deleted', True) and
+                              not person.get('is_bot', True))
             self.people[item_id] = item
 
     def streams_fetch(self, token):
@@ -536,3 +538,10 @@ class SlackArchive(object):
         if stream_id in cur_person.get('ims', []):
             return True
         return False
+
+    def people_stat(self):
+        total = sum([person['active'] for person in self.people.values()])
+        tokens = len(self.tokens)
+        advanced = sum([person['full_access']
+                        for person in self.tokens.values()])
+        return '{} / {} / {}'.format(total, tokens, advanced)
