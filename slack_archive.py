@@ -360,7 +360,7 @@ class SlackArchive(object):
         else:
             bulk_op_count, last_import_ts = 0, last_msg_ts
         if msgs['is_limited']:
-            self.log.warn('Limited stream history for %s', stream['name'])
+            self.log.warning('Limited stream history for %s', stream['name'])
             return False, '0', bulk_op_count
         return msgs['has_more'], last_import_ts, bulk_op_count
 

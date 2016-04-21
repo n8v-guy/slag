@@ -93,7 +93,7 @@ class WebServer(FlaskExt):
         app.run(host=host, port=port, debug=debug)
 
     def setup_rollbar(self):
-        # extend reports with user context
+        """extend reports with user context"""
         # pylint: disable=too-many-ancestors
         class CustomRequest(flask.Request):
             @property
