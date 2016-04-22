@@ -61,6 +61,7 @@ class SlackArchive(object):
         scheduler.every(10).minutes.do(self.people_fetch_all)
         scheduler.every(30).minutes.do(self.fetch_public_messages)
         scheduler.every(30).minutes.do(self.fetch_private_messages)
+        scheduler.every(24).hours.do(self.update_streams_properties)
 
     @staticmethod
     def get_logger():
@@ -116,6 +117,8 @@ class SlackArchive(object):
             private = [v for v in private if v['active']]
             direct = [v for v in direct if v['active']]
         # hide conversations without fetched history, make directs mutable
+        public = [stream for stream in public if stream.get('empty', True)]
+        private = [stream for stream in private if stream.get('empty', True)]
         direct = [dict(d) for d in direct if not d.get('empty', True)]
         # skip current person login from conversation name
         for conversation in direct:
@@ -319,6 +322,17 @@ class SlackArchive(object):
             self._fetch_person_groups_history(user_info, api_handle)
             self.log.info('Fetching private ims for %s', user_info['login'])
             self._fetch_person_ims_history(user_info, api_handle)
+
+    def update_streams_properties(self):
+        self.log.info('Updating streams properties')
+        empty_count = 0
+        for stream in self.streams.keys():
+            stream_row = self.database.messages.find_one({'to': stream})
+            self.streams.set_field(stream, 'empty', stream_row is None)
+            if stream_row is None:
+                empty_count += 1
+        self.log.info('Updating streams: %d/%d streams are empty',
+                      empty_count, len(self.streams))
 
     def _fetch_person_groups_history(self, user_info, api_handle):
         try:
