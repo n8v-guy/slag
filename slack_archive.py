@@ -68,12 +68,16 @@ class SlackArchive(object):
         log.setLevel(logging.INFO)
         log_handler = logging.StreamHandler()
         log_handler.setFormatter(
-            logging.Formatter('%(levelname)-7s | %(message)-80s | '
+            logging.Formatter('%(levelname)-7s | %(message)-99s | '
                               '%(filename)s:%(lineno)d | '
                               '%(asctime)s | %(funcName)s | '
                               '%(threadName)s'))
         log.addHandler(log_handler)
         return log
+
+    @staticmethod
+    def api_call_delay():
+        time.sleep(0.25)
 
     def _prepare_messages(self, query):
         results = []
@@ -111,8 +115,9 @@ class SlackArchive(object):
                           if v['type'] == SlackArchive.PUBLIC and v['active']]
             private = [v for v in private if v['active']]
             direct = [v for v in direct if v['active']]
+        # hide conversations without fetched history, make directs mutable
+        direct = [dict(d) for d in direct if not d.get('empty', True)]
         # skip current person login from conversation name
-        direct = [dict(d) for d in direct]
         for conversation in direct:
             logins = conversation['name'].split('+')
             logins.remove('@'+user_info['login'])
@@ -237,10 +242,10 @@ class SlackArchive(object):
     def tokens_validation(self):
         self.log.info('Validating tokens')
         for token, enc_key in self.tokens.decrypt_keys_map().items():
-            time.sleep(1)
             self.log.info('Check token %s', token)
             try:
                 user_info = Slacker(token).auth.test().body
+                SlackArchive.api_call_delay()
             except Error as err:
                 self.database.z_errors.insert_one({'_id': time.time(),
                                                    'ctx': 'tokens_validation',
@@ -255,6 +260,7 @@ class SlackArchive(object):
         self.log.info('Fetching people list here')
         try:
             people = self.api_handle.users.list().body
+            SlackArchive.api_call_delay()
         except Error as err:
             self.log.exception('Fetching people list exception %s', str(err))
             return
@@ -276,16 +282,19 @@ class SlackArchive(object):
             try:
                 self.log.info('Fetch channels for %s', user_info['login'])
                 all_ch = Slacker(token).channels.list().body
+                SlackArchive.api_call_delay()
                 self.people.set_field(user_info['user'], 'channels',
                                       SlackArchive._filter_channel_ids(all_ch))
                 self.update_streams(all_ch)  # not a duplicate op: fight races
                 self.log.info('Fetch %s\'s private groups', user_info['login'])
                 groups = Slacker(token).groups.list().body
+                SlackArchive.api_call_delay()
                 self.people.set_field(user_info['user'], 'groups',
                                       SlackArchive._filter_group_ids(groups))
                 self.update_streams(groups, user_info['user'])
                 self.log.info('Fetch direct msgs for %s', user_info['login'])
                 ims = Slacker(token).im.list().body
+                SlackArchive.api_call_delay()
                 self.people.set_field(user_info['user'], 'ims',
                                       SlackArchive._filter_im_ids(groups, ims))
                 self.update_streams(ims, user_info['user'])
@@ -314,6 +323,7 @@ class SlackArchive(object):
     def _fetch_person_groups_history(self, user_info, api_handle):
         try:
             groups = api_handle.groups.list().body
+            SlackArchive.api_call_delay()
         except Error as err:
             self.database.z_errors.insert_one({'_id': time.time(),
                                                'ctx': ('fetch_person_groups ' +
@@ -328,6 +338,7 @@ class SlackArchive(object):
     def _fetch_person_ims_history(self, user_info, api_handle):
         try:
             ims = api_handle.im.list().body
+            SlackArchive.api_call_delay()
         except Error as err:
             self.database.z_errors.insert_one({'_id': time.time(),
                                                'ctx': ('fetch_person_ims ' +
@@ -343,6 +354,7 @@ class SlackArchive(object):
         self.log.info('Fetching public channels messages')
         try:
             chans_list = self.api_handle.channels.list().body
+            SlackArchive.api_call_delay()
         except Error as err:
             self.database.z_errors.insert_one({'_id': time.time(),
                                                'ctx': 'fetch_public_messages',
@@ -368,7 +380,6 @@ class SlackArchive(object):
         bulk = self.database.messages.initialize_ordered_bulk_op()
         bulk_total_size = 0
         while True:
-            time.sleep(1)
             has_more, last_msg_ts, bulk_count = self._iterate_messages_history(
                 api_loader, stream, last_msg_ts, bulk)
             bulk_total_size += bulk_count
@@ -378,11 +389,13 @@ class SlackArchive(object):
             bulk.execute()
             if last_msg_ts != '0':  # import non-contiguous history
                 self.streams.set_field(stream['id'], 'last_msg', last_msg_ts)
+            self.streams.set_field(stream['id'], 'empty', False)
             self.log.info('Fetched %s new message(s) from %s',
                           bulk_total_size, self.streams[stream['id']]['name'])
 
     def _iterate_messages_history(self, api_loader, stream, last_msg_ts, bulk):
         msgs = api_loader(stream['id'], oldest=last_msg_ts).body
+        SlackArchive.api_call_delay()
         types_import, types_ignore = SlackArchive._message_type_sets()
         if msgs['messages']:
             bulk_op_count, last_import_ts = SlackArchive._import_messages_bulk(
