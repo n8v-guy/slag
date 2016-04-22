@@ -111,6 +111,13 @@ class SlackArchive(object):
                           if v['type'] == SlackArchive.PUBLIC and v['active']]
             private = [v for v in private if v['active']]
             direct = [v for v in direct if v['active']]
+        # skip current person login from conversation name
+        direct = [dict(d) for d in direct]
+        for conversation in direct:
+            logins = conversation['name'].split('+')
+            logins.remove('@'+user_info['login'])
+            conversation['name'] = '+'.join(logins)
+
         public.sort(key=lambda ch: ch['name'])
         private.sort(key=lambda ch: ch['name'])
         direct.sort(key=lambda ch: ch['name'])
