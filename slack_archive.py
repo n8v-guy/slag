@@ -117,9 +117,12 @@ class SlackArchive(object):
             private = [v for v in private if v['active']]
             direct = [v for v in direct if v['active']]
         # hide conversations without fetched history, make directs mutable
-        public = [stream for stream in public if stream.get('empty', True)]
-        private = [stream for stream in private if stream.get('empty', True)]
-        direct = [dict(d) for d in direct if not d.get('empty', True)]
+        public = [stream for stream in public
+                  if not stream.get('empty', True)]
+        private = [stream for stream in private
+                   if not stream.get('empty', True)]
+        direct = [dict(d) for d in direct
+                  if not d.get('empty', True)]
         # skip current person login from conversation name
         for conversation in direct:
             logins = conversation['name'].split('+')
@@ -260,7 +263,7 @@ class SlackArchive(object):
             self.tokens.upsert(token, user_info)
 
     def people_fetch_all(self):
-        self.log.info('Fetching people list here')
+        self.log.info('Fetching people list')
         try:
             people = self.api_handle.users.list().body
             SlackArchive.api_call_delay()
