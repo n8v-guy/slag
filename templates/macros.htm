@@ -1,0 +1,13 @@
+{% macro alert_permissions() %}
+<div class="alert alert-warning" role="alert">
+  To access your private messaging history you need to grant
+  advanced permissions on <a href="/login">login page</a>
+  and wait few minutes for fetching your messages.
+</div>
+{% endmacro %}
+
+{% macro alert_no_messages(filter) %}
+    <div class="alert alert-info" role="alert">
+      No conversations found for filter <b>'{{filter}}'</b>.
+    </div>
+{% endmacro %}

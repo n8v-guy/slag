@@ -264,9 +264,9 @@ class WebServer(FlaskExt):
             filter_name = flask.request.args.get('filter', 'my')
             public, private, direct, filter_name = self.archive.filter_streams(
                 user_info, filter_name)
-            return flask.render_template('browse.htm', channels=public,
-                                         groups=private, ims=direct,
-                                         f=filter_name)
+            return flask.render_template(
+                'browse.htm', channels=public, groups=private, ims=direct,
+                f=filter_name, advanced_user=user_info['full_access'])
         if not self.archive.has_stream_access(user_info, stream):
             return self.report_access_denied()
         results = self.archive.stream_messages(stream, page)

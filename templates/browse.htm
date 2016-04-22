@@ -1,6 +1,9 @@
 {% extends "base.htm" %}
 {% block title %}Browse channels{% endblock %}
 {% block content %}
+
+{% from 'macros.htm' import alert_permissions, alert_no_messages %}
+
 <h1 class="page-header">Conversations history
   <ul class="pagination pagination-sm" style="vertical-align:middle;margin:0;">
     <li class="{{'active' if f=='all'     else ''}}">
@@ -21,10 +24,11 @@
 <div class="panel panel-default">
   <div class="panel-heading">
     <h3 class="panel-title">
-      Public channels, {{ f + ': ' + channels|length|string }}
+      Public channels ({{ channels|length|string }})
     </h3>
   </div>
   <div class="panel-body">
+    {% if channels %}
     <ol class="breadcrumb" style="background-color:transparent;margin:0;padding:0;">
       <li style="display:none;"><a href="#"></a></li>
       {% for c in channels %}
@@ -32,16 +36,20 @@
       {% endfor %}
       <li><a href="#"></a></li>
     </ol>
+    {% else %}
+    {{ alert_no_messages(f) }}
+    {% endif%}
   </div>
 </div>
 
 <div class="panel panel-default">
   <div class="panel-heading">
     <h3 class="panel-title">
-      Private Groups, {{ f + ': ' + groups|length|string }}
+      Private Groups ({{ groups|length|string }})
     </h3>
   </div>
   <div class="panel-body">
+    {% if groups %}
     <ol class="breadcrumb" style="background-color:transparent;margin:0;padding:0;">
       <li style="display:none;"><a href="#"></a></li>
       {% for c in groups %}
@@ -49,16 +57,22 @@
       {% endfor %}
       <li><a href="#"></a></li>
     </ol>
+    {% elif advanced_user %}
+    {{ alert_no_messages(f) }}
+    {% else %}
+    {{ alert_permissions() }}
+    {% endif%}
   </div>
 </div>
 
 <div class="panel panel-default">
   <div class="panel-heading">
     <h3 class="panel-title">
-      Direct Messages, {{ f + ': ' + ims|length|string }}
+      Direct Messages ({{ ims|length|string }})
     </h3>
   </div>
   <div class="panel-body">
+    {% if ims %}
     <ol class="breadcrumb" style="background-color:transparent;margin:0;padding:0;">
       <li style="display:none;"><a href="#"></a></li>
       {% for c in ims %}
@@ -66,6 +80,11 @@
       {% endfor %}
       <li><a href="#"></a></li>
     </ol>
+    {% elif advanced_user %}
+    {{ alert_no_messages(f) }}
+    {% else %}
+    {{ alert_permissions() }}
+    {% endif%}
   </div>
 </div>
 
