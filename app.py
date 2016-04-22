@@ -169,10 +169,24 @@ class WebServer(FlaskExt):
 
     @FlaskExt.route('/stat')
     def stat(self):
+        stat = self.archive.stat()
         return WebServer._basic_page(
-            'Auth progress',
-            '<div class="jumbotron" align="center">'
-            '  <h1>' + self.archive.people_stat() + '</h1>'
+            'Statistics',
+            '<div class="col-md-6">'
+            ' <div class="panel panel-default" align="center">'
+            '  <div class="panel-heading">'
+            '   <h3 class="panel-title">Statistics</h3>'
+            '  </div>'
+            '  <table class="table">' +
+            ''.join([
+                '<tr><th>' +
+                param.keys()[0] +
+                '</th><td>' +
+                str(param.values()[0]) +
+                '</td></tr>'
+                for param in stat]) +
+            '  </table>'
+            ' </div>'
             '</div>')
 
     @FlaskExt.route('/login')

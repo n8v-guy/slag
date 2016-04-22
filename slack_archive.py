@@ -576,10 +576,27 @@ class SlackArchive(object):
             return True
         return False
 
-    def people_stat(self):
-        total = sum([person.get('active', False)
-                     for person in self.people.values()])
+    def stat(self):
+        total = sum(person.get('active', False)
+                    for person in self.people.values()) - 1  # minus slackbot
         tokens = len(self.tokens)
-        advanced = sum([person['full_access']
-                        for person in self.tokens.values()])
-        return '{} / {} / {}'.format(total, tokens, advanced)
+        advanced = sum(person['full_access']
+                       for person in self.tokens.values())
+        public = sum(stream['type'] == SlackArchive.PUBLIC
+                     for stream in self.streams.values())
+        private = sum(stream['type'] == SlackArchive.PRIVATE
+                      for stream in self.streams.values())
+        direct = sum(stream['type'] == SlackArchive.DIRECT
+                     for stream in self.streams.values())
+        msgs_stat = self.database.command('collstats', 'messages')
+        return [
+            {'Advanced auth people': advanced},
+            {'Any slag auth people': tokens},
+            {'People in team': total},
+            {'': ''},
+            {'Public channels': public},
+            {'Private groups': private},
+            {'Direct message streams': direct},
+            {'Total messages imported': msgs_stat['count']},
+            {'Total messages size': msgs_stat['storageSize']},
+        ]
