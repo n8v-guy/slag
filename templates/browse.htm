@@ -1,64 +1,71 @@
 {% extends "base.htm" %}
 {% block title %}Browse channels{% endblock %}
 {% block content %}
+<h1 class="page-header">Conversations history
+  <ul class="pagination pagination-sm" style="vertical-align:middle;margin:0;">
+    <li class="{{'active' if f=='all'     else ''}}">
+      <a href="/browse?filter=all">all</a>
+    </li>
+    <li class="{{'active' if f=='active'  else ''}}">
+      <a href="/browse?filter=active">active</a>
+    </li>
+    <li class="{{'active' if f=='my'      else ''}}">
+      <a href="/browse?filter=my">my</a>
+    </li>
+    <li class="{{'active' if f=='archive' else ''}}">
+      <a href="/browse?filter=archive">archive</a>
+    </li>
+  </ul>
+</h1>
 
-<div class="panel-group" id="accordion" role="tablist" aria-multiselectable="true">
-  <div class="panel panel-default">
-    <div class="panel-heading" role="tab" id="headingOne">
-      <h4 class="panel-title">
-        <a role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseOne" aria-expanded="true" aria-controls="collapseOne">Public channels, {{ f + ': ' + channels|length|string }}</a>
-      </h4>
-    </div>
-    <div id="collapseOne" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="headingOne">
-      <div class="panel-body">
-        <ul class="nav nav-tabs">
-          <li role="presentation" class="{{'active' if f=='all'     else ''}}">
-            <a href="/browse?filter=all">All</a>
-        </li>
-          <li role="presentation" class="{{'active' if f=='active'  else ''}}">
-            <a href="/browse?filter=active">Active</a>
-        </li>
-          <li role="presentation" class="{{'active' if f=='my'      else ''}}">
-            <a href="/browse?filter=my">My</a>
-            </li>
-          <li role="presentation" class="{{'active' if f=='archive' else ''}}">
-            <a href="/browse?filter=archive">Archive</a>
-        </li>
-        </ul>
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">
+      Public channels, {{ f + ': ' + channels|length|string }}
+    </h3>
+  </div>
+  <div class="panel-body">
+    <ol class="breadcrumb" style="background-color:transparent;margin:0;padding:0;">
+      <li style="display:none;"><a href="#"></a></li>
+      {% for c in channels %}
+      <li><a href="/browse?s={{c['_id']}}">#{{c['name']}}</a></li>
+      {% endfor %}
+      <li><a href="#"></a></li>
+    </ol>
+  </div>
+</div>
 
-        <ol class="breadcrumb">
-          <li style="display:none;"><a href="#"></a></li>
-        {% for c in channels %}
-          <li><a href="/browse?s={{c['_id']}}">#{{c['name']}}</a></li>
-        {% endfor %}
-          <li><a href="#"></a></li>
-        </ol>
-      </div>
-    </div>
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">
+      Private Groups, {{ f + ': ' + groups|length|string }}
+    </h3>
   </div>
-  <div class="panel panel-default">
-    <div class="panel-heading" role="tab" id="headingTwo">
-      <h4 class="panel-title">
-        <a class="collapsed" role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">Private Groups</a>
-      </h4>
-    </div>
-    <div id="collapseTwo" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingTwo">
-      <div class="panel-body">
-        You need to grant advanced permissions <a href="/">here</a>. [NOT IMPLEMENTED YET]
-      </div>
-    </div>
+  <div class="panel-body">
+    <ol class="breadcrumb" style="background-color:transparent;margin:0;padding:0;">
+      <li style="display:none;"><a href="#"></a></li>
+      {% for c in groups %}
+      <li><a href="/browse?s={{c['_id']}}">#{{c['name']}}</a></li>
+      {% endfor %}
+      <li><a href="#"></a></li>
+    </ol>
   </div>
-  <div class="panel panel-default">
-    <div class="panel-heading" role="tab" id="headingThree">
-      <h4 class="panel-title">
-        <a class="collapsed" role="button" data-toggle="collapse" data-parent="#accordion" href="#collapseThree" aria-expanded="false" aria-controls="collapseThree">Direct Messages</a>
-      </h4>
-    </div>
-    <div id="collapseThree" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingThree">
-      <div class="panel-body">
-        You need to grant advanced permissions <a href="/">here</a>. [NOT IMPLEMENTED YET]
-      </div>
-    </div>
+</div>
+
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">
+      Direct Messages, {{ f + ': ' + ims|length|string }}
+    </h3>
+  </div>
+  <div class="panel-body">
+    <ol class="breadcrumb" style="background-color:transparent;margin:0;padding:0;">
+      <li style="display:none;"><a href="#"></a></li>
+      {% for c in ims %}
+      <li><a href="/browse?s={{c['_id']}}">{{c['name']}}</a></li>
+      {% endfor %}
+      <li><a href="#"></a></li>
+    </ol>
   </div>
 </div>
 
