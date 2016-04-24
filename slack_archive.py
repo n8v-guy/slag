@@ -57,8 +57,8 @@ class SlackArchive(object):
         self.timers = Scheduler(self._setup_scheduler)
 
     def _setup_scheduler(self, scheduler):
-        scheduler.every(10).minutes.do(self.tokens_validation)
         scheduler.every(10).minutes.do(self.people_fetch_all)
+        scheduler.every(30).minutes.do(self.tokens_validation)
         scheduler.every(30).minutes.do(self.fetch_public_messages)
         scheduler.every(30).minutes.do(self.fetch_private_messages)
         scheduler.every(24).hours.do(self.update_streams_properties)
@@ -329,9 +329,11 @@ class SlackArchive(object):
     def update_streams_properties(self):
         self.log.info('Updating streams properties')
         empty_count = 0
-        for stream in self.streams.keys():
-            stream_row = self.database.messages.find_one({'to': stream})
-            self.streams.set_field(stream, 'empty', stream_row is None)
+        for stream_id in self.streams.keys():
+            if not self.streams[stream_id].get('empty'):
+                continue
+            stream_row = self.database.messages.find_one({'to': stream_id})
+            self.streams.set_field(stream_id, 'empty', stream_row is None)
             if stream_row is None:
                 empty_count += 1
         self.log.info('Updating streams: %d/%d streams are empty',
