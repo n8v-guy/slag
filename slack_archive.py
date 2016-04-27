@@ -338,6 +338,7 @@ class SlackArchive(object):
                 empty_count += 1
         self.log.info('Updating streams: %d/%d streams are empty',
                       empty_count, len(self.streams))
+        # TODO Make a list of abandoned streams to fetch them not so often
 
     def _fetch_person_groups_history(self, user_info, api_handle):
         try:
@@ -396,6 +397,7 @@ class SlackArchive(object):
 
     def _fetch_single_stream_messages(self, api_loader, stream):
         last_msg_ts = self.streams[stream['id']].get('last_msg', '0')
+        # TODO Skip 'just fetched' streams (when fetching for multiple users)
         bulk = self.database.messages.initialize_ordered_bulk_op()
         bulk_total_size = 0
         while True:
