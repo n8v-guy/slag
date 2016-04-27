@@ -11,8 +11,8 @@ Slag is an export files viewer for [Slack](https://slack.com), capable to look b
 * limit access only for team members
 * full text search through channels archive
 * browse channels history back to the beginning
-* import new messages on timer basis [TBD]
-* private channels & messages with corresponding access right [TBD]
+* browse private messages with corresponding access rights
+* import new messages on a timer basis
   
 **NB**: This service named after [slag glass](https://en.wikipedia.org/wiki/Slag), which is the solid state of **slack** in the meaning of **coal dust**.
 
@@ -25,8 +25,8 @@ Slag uses a number of open source projects to work properly:
 * [jQuery](https://jquery.com/), because
 
 ### Installation
-Deploy this repo to [Heroku](https://www.heroku.com/) dyno, setup [mLab](https://mlab.com/) integration (both are available on the free plan) and put your settings in `credentials.py` file. Simple as that.
-But just ask me if you have any problems here.
+Deploy this repo to [Heroku](https://www.heroku.com/) dyno, setup [mLab](https://mlab.com/) integration (both are available on the free plan) and put your settings in `bootstrap.py` file. Simple as that.
+But just ask me if you have any issues there.
 
 ### Development
 Want to contribute? Great!  

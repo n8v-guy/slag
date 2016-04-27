@@ -67,7 +67,7 @@ bin/
 include/
 
 #Private area
-credentials.py
+bootstrap.py
 
 # a bit more
 .DS_Store

@@ -15,13 +15,18 @@ import rollbar.contrib.flask
 from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
-import credentials  # noqa # pylint: disable=unused-import
+import bootstrap  # noqa # pylint: disable=unused-import
 import slack_archive
 import store
 
-# TODO ask and save these after app deploy
-SLACK_TEAM_ID = 'T064J5B38'
-SLACK_CLIENT_ID = '6154181110.20526331843'
+SLACK_CLIENT_ID = os.environ['SLACK_CLIENT_ID']
+SLACK_CLIENT_SECRET = os.environ['SLACK_CLIENT_SECRET']
+SLACK_TEAM_ID = os.environ['SLACK_TEAM_ID']
+SLACK_TEAM_TOKEN = os.environ['SLACK_TEAM_TOKEN']
+MONGO_URI = os.environ['MONGO_URI']
+CRYPTO_KEY = os.environ['CRYPTO_KEY']
+ROLLBAR_KEY = os.environ['ROLLBAR_KEY']
+
 BASIC_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               '&client_id=' + SLACK_CLIENT_ID + '&scope=team:read,' +
               'users:read,channels:read,channels:history,pins:read,emoji:read')
@@ -62,23 +67,23 @@ class WebServer(FlaskExt):
     """Wrapper for web-server functionality"""
     def __init__(self):
         super(WebServer, self).__init__(__name__)
-        self.setup_rollbar()
+        if ROLLBAR_KEY:
+            self.setup_rollbar()
         self.before_request(WebServer._redirect_to_https)
         self.before_request(self._check_auth)
-        # TODO eliminate MongoLab mentions
-        self.config['MONGO_URI'] = os.environ['MONGOLAB_URI']
+        self.config['MONGO_URI'] = MONGO_URI
         self.mongo = flask_pymongo.PyMongo(self)
         with self.app_context() as ctx:
             self.tokens = store.TokenStore(self.mongo.db.tokens, ctx,
-                                           key=os.environ['CRYPTO_KEY'])
+                                           key=CRYPTO_KEY)
             self.archive = slack_archive.SlackArchive(
-                self.mongo.db, ctx, self.tokens, os.environ['SLACK_TOKEN'])
+                self.mongo.db, ctx, self.tokens, SLACK_TEAM_TOKEN)
 
     @staticmethod
     def start():
         if WebServer.is_production():
             host = '0.0.0.0'
-            port = int(os.environ.get('PORT'))
+            port = int(os.environ.get('PORT', 80))
         else:
             host = '127.0.0.1'
             port = 8080
@@ -109,8 +114,7 @@ class WebServer(FlaskExt):
     def init_rollbar(app):
         """init rollbar module"""
         rollbar.init(
-            # access token for the demo app: https://rollbar.com/demo
-            os.environ['ROLLBAR_KEY'],
+            ROLLBAR_KEY,
             # environment name
             'production' if WebServer.is_production() else 'flasktest',
             # server root directory, makes tracebacks prettier
@@ -344,7 +348,7 @@ class WebServer(FlaskExt):
         try:
             oauth = Slacker.oauth.access(
                 client_id=SLACK_CLIENT_ID,
-                client_secret=os.environ['SLACK_SECRET'],
+                client_secret=SLACK_CLIENT_SECRET,
                 code=flask.request.args['code'],
                 redirect_uri=WebServer.url_for('login')
             ).body
