@@ -225,10 +225,18 @@ class SlackArchive(object):
     @staticmethod
     def _import_messages_bulk(bulk, channel, msgs,
                               types_import, types_ignore):
-        # no sort for API results (default sorting method), reverse for exports
+        # reverse order for exported messages, no sort for API response
         msgs = sorted(msgs, key=lambda m: float(m['ts']), reverse=True)
         msg_counter = 0
+        known_fields = {'type', 'subtype', 'ts', 'text', 'user',
+                        'bot_id', 'edited', 'username',
+                        'display_as_bot', 'upload', 'item_type', 'inviter',
+                        'members', 'purpose', 'topic', 'comment', 'item',
+                        'attachments', 'file', 'reactions', 'name', 'old_name',
+                        'icons'}
         for msg in msgs:
+            unknown_fields = set(msg.keys()) - known_fields
+            assert len(unknown_fields) == 0, ', '.join(unknown_fields)
             subtype = msg.get('subtype', '')
             if subtype not in types_import:
                 if subtype not in types_ignore:
