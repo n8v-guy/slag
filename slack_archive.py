@@ -57,7 +57,7 @@ class SlackArchive(object):
         self.timers = Scheduler(self._setup_scheduler)
 
     def _setup_scheduler(self, scheduler):
-        scheduler.every(10).minutes.do(self.people_fetch_all)
+        scheduler.every(30).minutes.do(self.people_fetch_all)
         scheduler.every(30).minutes.do(self.tokens_validation)
         scheduler.every(30).minutes.do(self.fetch_public_messages)
         scheduler.every(30).minutes.do(self.fetch_private_messages)
@@ -229,8 +229,8 @@ class SlackArchive(object):
         msgs = sorted(msgs, key=lambda m: float(m['ts']), reverse=True)
         msg_counter = 0
         known_fields = {'type', 'subtype', 'ts', 'text', 'user',
-                        'bot_id', 'edited', 'username',
-                        'display_as_bot', 'upload', 'item_type', 'inviter',
+                        'bot_id', 'edited', 'username', 'pinned_to', 'upload',
+                        'is_starred', 'display_as_bot', 'item_type', 'inviter',
                         'members', 'purpose', 'topic', 'comment', 'item',
                         'attachments', 'file', 'reactions', 'name', 'old_name',
                         'icons'}
@@ -244,10 +244,16 @@ class SlackArchive(object):
                 continue
             msg_counter += 1
             msg_id = SlackArchive._message_uid(channel['id'], msg['ts'])
+            if 'file' in msg and False:
+                logging.error(' '.join(sorted(msg['file'].keys())) + '\n' +
+                              msg['file']['pretty_type'] + ' ' +
+                              msg['file']['mimetype'].split('/')[0] + ' ' +
+                              msg['file']['name'] + ' ' +
+                              msg['file']['title'] + '\n' +
+                              msg['file']['url_private'])
             bulk.find({'_id': msg_id}).upsert().update(
                 {'$set': {'ts': float(msg['ts']),
                           'type': hash(subtype),
-                          # TODO check other useful fields
                           'msg': msg['text'],
                           'from': msg['user'],
                           'to': channel['id']}})
