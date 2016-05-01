@@ -90,7 +90,7 @@ class SlackArchive(object):
             res['ts'] = time.ctime(res['ts'])
             res['msg'] = markup.Markup(res['msg'], self.people, self.streams)
             results.append(res)
-        return results
+        return results, query.count()
 
     def filter_streams(self, user_info, filter_name):
         cur_person = self.people[user_info['user']]

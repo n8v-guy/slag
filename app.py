@@ -244,18 +244,21 @@ class WebServer(FlaskExt):
         if stream != '' and not self.archive.has_stream_access(user, stream):
             return self.report_access_denied()
         if context != '':
-            results = self.archive.find_messages_around(context, stream, page)
+            results, total = self.archive.find_messages_around(context,
+                                                               stream, page)
         elif stream != '':
-            results = self.archive.find_messages_in_stream(query, stream, page)
+            results, total = self.archive.find_messages_in_stream(query,
+                                                                  stream, page)
         else:
             streams = self.archive.filter_streams(user, 'all')
             streams = streams[:-1]  # public/private/direct, skip filter name
             # chain tuple of lists to flat list
             streams_list = itertools.chain(*streams)
             stream_ids = [stream_item['_id'] for stream_item in streams_list]
-            results = self.archive.find_messages(query, stream_ids, page)
+            results, total = self.archive.find_messages(query,
+                                                        stream_ids, page)
         return flask.render_template(
-            'search.htm', results=results, total=len(results), q=query,
+            'search.htm', results=results, total=total, q=query,
             s=stream, c=context, p=page,
             n=slack_archive.MESSAGES_NUMBER_PER_SEARCH_REQUEST)
 
@@ -287,9 +290,9 @@ class WebServer(FlaskExt):
                 f=filter_name, advanced_user=user_info['full_access'])
         if not self.archive.has_stream_access(user_info, stream):
             return self.report_access_denied()
-        results = self.archive.stream_messages(stream, page)
+        results, total = self.archive.stream_messages(stream, page)
         return flask.render_template(
-            'stream.htm', results=results, total=len(results), s=stream,
+            'stream.htm', results=results, total=total, s=stream,
             p=page, n=slack_archive.MESSAGES_NUMBER_PER_STREAM_REQUEST)
 
     @staticmethod
