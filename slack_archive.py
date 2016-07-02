@@ -57,11 +57,11 @@ class SlackArchive(object):
         self.timers = Scheduler(self._setup_scheduler)
 
     def _setup_scheduler(self, scheduler):
-        scheduler.every(10).minutes.do(self.people_fetch_all)
-        scheduler.every(10).minutes.do(self.tokens_validation)
-        scheduler.every(10).minutes.do(self.fetch_public_messages)
-        scheduler.every(10).minutes.do(self.fetch_private_messages)
-        scheduler.every(24).hours.do(self.update_streams_properties)
+        scheduler.every(25).minutes.do(self.people_fetch_all)
+        scheduler.every(25).minutes.do(self.tokens_validation)
+        scheduler.every(25).minutes.do(self.fetch_public_messages)
+        scheduler.every(25).minutes.do(self.fetch_private_messages)
+        scheduler.every(25).minutes.do(self.update_streams_properties)
 
     @staticmethod
     def get_logger():
