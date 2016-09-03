@@ -438,7 +438,7 @@ class SlackArchive(object):
                 bulk, stream, msgs['messages'], types_import, types_ignore)
         else:
             bulk_op_count, last_import_ts = 0, last_msg_ts
-        if msgs['is_limited']:
+        if msgs.get('is_limited'):
             self.log.warning('Limited stream history for %s',
                              self.streams[stream['id']]['name'])
             return False, '0', bulk_op_count
