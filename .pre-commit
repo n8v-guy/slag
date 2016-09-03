@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install by this command: ln -s -f $(pwd)/.commit-msg .git/hooks/pre-commit
+# install by this command: ln -s -f $(pwd)/.pre-commit .git/hooks/commit-msg
 colorize ()
 {
     RED="\033[31m"
