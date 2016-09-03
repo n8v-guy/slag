@@ -8,12 +8,15 @@ colorize ()
     BLUE="\033[34m"
     NORMAL="\033[0m"
     color=\$${1:-NORMAL}
-    # activate color passed as argument
-    echo -ne "`eval echo ${color}`"
-    # read stdin (pipe) and print from it:
-    cat
-    # back to normal (no color)
-    echo -ne "${NORMAL}"
+    # iterate stdin (pipe) and print lines from it
+    cat | while read line ; do
+      # activate color passed as argument
+      echo -ne "`eval echo ${color}`"
+      # line itself
+      echo $line
+      # back to normal (no color)
+      echo -ne "${NORMAL}"
+    done
 }
 
 echo [envchk] | colorize BLUE
