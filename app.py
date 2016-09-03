@@ -77,7 +77,7 @@ class WebServer(FlaskExt):
             self.tokens = store.TokenStore(self.mongo.db.tokens, ctx,
                                            key=CRYPTO_KEY)
             self.archive = slack_archive.SlackArchive(
-                self.mongo.db, ctx, self.tokens, SLACK_TEAM_TOKEN)
+                self.mongo, ctx, self.tokens, SLACK_TEAM_TOKEN)
 
     @staticmethod
     def start():

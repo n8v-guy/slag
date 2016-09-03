@@ -1,45 +1,21 @@
 # pylint: disable=fixme,missing-docstring
-import atexit
 import functools
 import json
 import logging
 import os
 import time
-import threading
 import zipfile
 
-import schedule
 from slacker import Slacker, Error
 
 import markup
 import mongo_store
+import scheduler
+
 
 LOCAL_ARCHIVE_FILE = 'archive.zip'
 MESSAGES_NUMBER_PER_STREAM_REQUEST = 1000
 MESSAGES_NUMBER_PER_SEARCH_REQUEST = 100
-
-
-class Scheduler(object):
-    bg_task = None
-
-    def __init__(self, server_callback):
-        # scheduler in background
-        atexit.register(self.background_stop)
-        server_callback(schedule)
-        self.background_task()
-
-    def background_task(self):
-        schedule.run_pending()
-        # restart with proper interval here
-        self.bg_task = threading.Timer(schedule.idle_seconds(),
-                                       self.background_task)
-        self.bg_task.daemon = True  # thread dies with main
-        self.bg_task.start()
-
-    def background_stop(self):
-        if self.bg_task:
-            self.bg_task.cancel()
-            self.bg_task.join()
 
 
 class SlackArchive(object):
@@ -47,33 +23,36 @@ class SlackArchive(object):
     PRIVATE = 1  # no MPIMs here
     DIRECT = 2  # MPIMs are here
 
-    def __init__(self, db, ctx, tokens, api_key):
-        self.database = db
+    def __init__(self, mongo, ctx, tokens, api_key):
+        self.mongo = mongo
         self.log = SlackArchive.get_logger()
-        self.people = mongo_store.MongoStore(self.database.users, ctx)
-        self.streams = mongo_store.MongoStore(self.database.streams, ctx)
+        self.people = mongo_store.MongoStore(self.mongo.db.users, ctx)
+        self.streams = mongo_store.MongoStore(self.mongo.db.streams, ctx)
         self.tokens = tokens
         self.api_handle = Slacker(api_key)
-        self.timers = Scheduler(self._setup_scheduler)
+        self.scheduler = scheduler.Scheduler(ctx, mongo)
+        self._setup_scheduler()
+        self.scheduler.start()
 
-    def _setup_scheduler(self, scheduler):
-        scheduler.every(25).minutes.do(self.people_fetch_all)
-        scheduler.every(25).minutes.do(self.tokens_validation)
-        scheduler.every(25).minutes.do(self.fetch_public_messages)
-        scheduler.every(25).minutes.do(self.fetch_private_messages)
-        scheduler.every(25).minutes.do(self.update_streams_properties)
+    def _setup_scheduler(self):
+        self.scheduler.every(25).minutes.do(self.people_fetch_all)
+        self.scheduler.every(25).minutes.do(self.tokens_validation)
+        self.scheduler.every(25).minutes.do(self.fetch_public_messages)
+        self.scheduler.every(25).minutes.do(self.fetch_private_messages)
+        self.scheduler.every(25).minutes.do(self.update_streams_properties)
 
     @staticmethod
     def get_logger():
         log = logging.getLogger(__name__)
-        log.setLevel(logging.INFO)
-        log_handler = logging.StreamHandler()
-        log_handler.setFormatter(
-            logging.Formatter('%(levelname)-7s | %(message)-99s | '
-                              '%(filename)s:%(lineno)d | '
-                              '%(asctime)s | %(funcName)s | '
-                              '%(threadName)s'))
-        log.addHandler(log_handler)
+        if not log.handlers:
+            log.setLevel(logging.INFO)
+            log_handler = logging.StreamHandler()
+            log_handler.setFormatter(
+                logging.Formatter('%(levelname)-7s | %(message)-99s | '
+                                  '%(filename)s:%(lineno)d | '
+                                  '%(asctime)s | %(funcName)s | '
+                                  '%(threadName)s'))
+            log.addHandler(log_handler)
         return log
 
     @staticmethod
@@ -148,7 +127,7 @@ class SlackArchive(object):
     def _import_people(self, archive):
         with archive.open('users.json') as users_list:
             people = json.loads(users_list.read())
-            bulk = self.database.users.initialize_ordered_bulk_op()
+            bulk = self.mongo.db.users.initialize_ordered_bulk_op()
             for person in people:
                 bulk.find({'_id': person['id']}).upsert().update(
                     {'$set': {'name': person['profile']['real_name'],
@@ -164,7 +143,7 @@ class SlackArchive(object):
 
     def _import_channels(self, channel_list):
         channels = json.loads(channel_list.read())
-        bulk = self.database.streams.initialize_ordered_bulk_op()
+        bulk = self.mongo.db.streams.initialize_ordered_bulk_op()
         for channel in channels:
             pins = SlackArchive._pins_from_stream(channel)
             bulk.find({'_id': channel['id']}).upsert().update(
@@ -191,7 +170,7 @@ class SlackArchive(object):
         types_import, types_ignore = SlackArchive._message_type_sets()
         files = [n for n in archive.namelist()
                  if not n.endswith(os.path.sep)]
-        bulk = self.database.messages.initialize_ordered_bulk_op()
+        bulk = self.mongo.db.messages.initialize_ordered_bulk_op()
         for channel in channels:
             last_msg_ts = '0'
             for fname in [n for n in files
@@ -268,7 +247,7 @@ class SlackArchive(object):
                 user_info = Slacker(token).auth.test().body
                 SlackArchive.api_call_delay()
             except Error as err:
-                self.database.z_errors.insert_one({'_id': time.time(),
+                self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                    'ctx': 'tokens_validation',
                                                    'msg': str(err)})
                 self.log.exception('Error %s for token %s', str(err), token)
@@ -320,7 +299,7 @@ class SlackArchive(object):
                                       SlackArchive._filter_im_ids(groups, ims))
                 self.update_streams(ims, user_info['user'])
             except Error as err:
-                self.database.z_errors.insert_one({'_id': time.time(),
+                self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                    'ctx': 'channels_fetch',
                                                    'msg': str(err)})
                 self.log.exception('Fetch streams error %s', str(err))
@@ -347,7 +326,7 @@ class SlackArchive(object):
         for stream_id in self.streams.keys():
             if not self.streams[stream_id].get('empty'):
                 continue
-            stream_row = self.database.messages.find_one({'to': stream_id})
+            stream_row = self.mongo.db.messages.find_one({'to': stream_id})
             self.streams.set_field(stream_id, 'empty', stream_row is None)
             if stream_row is None:
                 empty_count += 1
@@ -360,7 +339,7 @@ class SlackArchive(object):
             groups = api_handle.groups.list().body
             SlackArchive.api_call_delay()
         except Error as err:
-            self.database.z_errors.insert_one({'_id': time.time(),
+            self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                'ctx': ('fetch_person_groups ' +
                                                        user_info['login']),
                                                'msg': str(err)})
@@ -375,7 +354,7 @@ class SlackArchive(object):
             ims = api_handle.im.list().body
             SlackArchive.api_call_delay()
         except Error as err:
-            self.database.z_errors.insert_one({'_id': time.time(),
+            self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                'ctx': ('fetch_person_ims ' +
                                                        user_info['login']),
                                                'msg': str(err)})
@@ -391,7 +370,7 @@ class SlackArchive(object):
             chans_list = self.api_handle.channels.list().body
             SlackArchive.api_call_delay()
         except Error as err:
-            self.database.z_errors.insert_one({'_id': time.time(),
+            self.mongo.db.z_errors.insert_one({'_id': time.time(),
                                                'ctx': 'fetch_public_messages',
                                                'msg': str(err)})
             self.log.exception('Fetch public messages error %s', str(err))
@@ -413,7 +392,7 @@ class SlackArchive(object):
     def _fetch_single_stream_messages(self, api_loader, stream):
         last_msg_ts = self.streams[stream['id']].get('last_msg', '0')
         # TODO Skip 'just fetched' streams (when fetching for multiple users)
-        bulk = self.database.messages.initialize_ordered_bulk_op()
+        bulk = self.mongo.db.messages.initialize_ordered_bulk_op()
         bulk_total_size = 0
         while True:
             has_more, last_msg_ts, bulk_count = self._iterate_messages_history(
@@ -523,11 +502,11 @@ class SlackArchive(object):
                 self.streams.reload()
                 # import messages
                 result, types_new = self._import_messages(channels, archive)
-                self.database.messages.create_index('ts')
-                self.database.messages.create_index('to')
-                self.database.messages.create_index('type')
-                self.database.messages.create_index('from')
-                self.database.messages.create_index([('msg', 'text')],
+                self.mongo.db.messages.create_index('ts')
+                self.mongo.db.messages.create_index('to')
+                self.mongo.db.messages.create_index('type')
+                self.mongo.db.messages.create_index('from')
+                self.mongo.db.messages.create_index([('msg', 'text')],
                                                     default_language='ru')
         skip_fields = ['upserted', 'modified', 'matched']
         for field in skip_fields:
@@ -554,7 +533,7 @@ class SlackArchive(object):
         return ' '.join([user + '@' for user in active])
 
     def stream_messages(self, stream, page):
-        query = self.database.messages.find(
+        query = self.mongo.db.messages.find(
             {'to': stream},
             sort=[('ts', -1)],
             skip=page * MESSAGES_NUMBER_PER_STREAM_REQUEST,
@@ -577,7 +556,7 @@ class SlackArchive(object):
         return self._search_messages(condition, page)
 
     def _search_messages(self, condition, page):
-        query = self.database.messages.find(
+        query = self.mongo.db.messages.find(
             condition,
             sort=[('ts', -1)],
             skip=page * MESSAGES_NUMBER_PER_SEARCH_REQUEST,
@@ -608,7 +587,7 @@ class SlackArchive(object):
                       for stream in self.streams.values())
         direct = sum(stream['type'] == SlackArchive.DIRECT
                      for stream in self.streams.values())
-        msgs_stat = self.database.command('collstats', 'messages')
+        msgs_stat = self.mongo.db.command('collstats', 'messages')
         return [
             {'Advanced auth people': advanced},
             {'Any slag auth people': tokens},
