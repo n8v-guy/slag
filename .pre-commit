@@ -1,17 +1,91 @@
 #!/usr/bin/env bash
-# install by this command: ln -s -f $(pwd)/.pre-commit .git/hooks/pre-commit
-echo [git st]
-git status --porcelain 2>&1 | grep -E '^\?\?' 1>&2
-git_st=$?
-echo [flake8]
-find . -maxdepth 1 -name \*.py -exec flake8 --max-complexity 5 {} \; 2>&1 | grep -E '^\./' 1>&2
-flake8=$?
-echo [pylint]
-find . -maxdepth 1 -name \*.py -exec pylint --disable=I --msg-template='./{path}:{line}:{column}: {msg_id} {msg} ({symbol})' {} \; 2>&1 | grep -E '^\./' 1>&2
-pylint=$?
-# "1" for grep's "not found"
-if [ $flake8 -ne 1 ] || [ $pylint -ne 1 ] || [ $git_st -ne 1 ]; then
-echo [FAILED]
+# install by this command: ln -s -f $(pwd)/.commit-msg .git/hooks/pre-commit
+colorize ()
+{
+    RED="\033[31m"
+    GREEN="\033[32m"
+    YELLOW="\033[33m"
+    BLUE="\033[34m"
+    NORMAL="\033[0m"
+    color=\$${1:-NORMAL}
+    # activate color passed as argument
+    echo -ne "`eval echo ${color}`"
+    # read stdin (pipe) and print from it:
+    cat
+    # back to normal (no color)
+    echo -ne "${NORMAL}"
+}
+
+echo [envchk] | colorize BLUE
+# find tools
+command -v git >/dev/null 2>&1 || { echo "git command not found, aborting" | colorize RED; exit 1; }
+command -v flake8 >/dev/null 2>&1 || { echo "flake8 command not found, aborting" | colorize RED; exit 1; }
+command -v pylint >/dev/null 2>&1 || { echo "pylint command not found, aborting" | colorize RED; exit 1; }
+
+echo [git st] | colorize BLUE
+# check unstaged files
+git_st=$(git status --porcelain | grep -E '^\?\?')
+if [ ! -z "${git_st}" ]; then
+  echo "$git_st" | colorize RED
+fi
+
+# check commit message
+msg="$1"
+if [ -z "$msg" ]; then
+  msg=$(git log --format=%B -1);
+else
+  msg=$(<$msg)
+fi
+echo [commit] | colorize BLUE
+echo "$msg" | colorize GREEN
+gitmsg=''
+if [ $(echo "$msg" | wc -w) -lt 3 ]; then
+  echo "Commit message should be longer than 3 words" | colorize RED
+  gitmsg='short'
+fi
+blacklist="again bug bugs pr review reviewers works"
+shopt -s nocasematch
+for word in $msg; do
+  for blocked in $blacklist; do
+    if [[ "$word" == "$blocked" ]]; then
+      echo "Commit message should not use a word '$word', please describe details" | colorize RED
+      gitmsg='words'
+    fi
+  done
+done
+shopt -u nocasematch
+# list files to further lint
+updates=$(git status --porcelain | awk 'match($1, "[AMR]") {p="./"$NF; print p}' | sort)
+if [ -z "$updates" ]; then
+  echo "No changes found, examing all existing sources" | colorize YELLOW 
+  updates=$(git ls-tree --full-tree -r HEAD | awk '{print "./"$4}' | sort)
+  skip_updates_section=1
+fi
+updates_py=$(echo "$updates" | awk 'match($1, ".py$") {print $1}' )
+
+echo [flake8] | colorize BLUE
+flake8=$(echo "$updates_py" | xargs flake8 --max-complexity 7 2>&1 | grep -E '^\./')
+if [ -n "$flake8" ]; then
+  echo "$flake8" | colorize RED
+fi
+
+echo [pylint] | colorize BLUE
+pylint=$(echo "$updates_py" | xargs pylint --disable=I --bad-names=data,total,info,callback,new,old,item,good,bad,obj,handler --msg-template='./{path}:{line}:{column}: {msg_id} {msg} ({symbol})' 2>&1 | grep -E '^\./')
+if [ -n "$pylint" ]; then
+  echo "$pylint" | colorize RED
+fi
+
+# check for disabled warnings for code checks
+echo [pymute] | colorize YELLOW
+echo "$updates_py" | xargs grep --color -EHn '(pylint|noqa)' | colorize YELLOW
+
+if [ -z "${skip_updates_section+x}" ]; then
+  echo [update] | colorize YELLOW
+  echo "$updates" | colorize YELLOW
+fi
+
+if [ -n "$git_st" ] || [ -n "$gitmsg" ] || [ -n "$flake8" ] || [ -n "$pylint" ]; then
+  echo [FAILED] | colorize RED
   exit 1
 fi
-echo [FINISH]
+echo [FINISH] | colorize GREEN

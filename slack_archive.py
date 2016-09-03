@@ -288,13 +288,13 @@ class SlackArchive(object):
         # TODO add bulk_op wrapper for mongo_store
         for person in people['members']:
             item_id = person['id']
-            item = dict(self.people.get(item_id, {}))
-            item['name'] = person['profile']['real_name']
-            item['login'] = person['name']
-            item['avatar'] = person['profile']['image_72']
-            item['active'] = (not person.get('deleted', True) and
-                              not person.get('is_bot', True))
-            self.people[item_id] = item
+            person_dict = dict(self.people.get(item_id, {}))
+            person_dict['name'] = person['profile']['real_name']
+            person_dict['login'] = person['name']
+            person_dict['avatar'] = person['profile']['image_72']
+            person_dict['active'] = (not person.get('deleted', True) and
+                                     not person.get('is_bot', True))
+            self.people[item_id] = person_dict
 
     def streams_fetch(self, token):
         enc_key = self.tokens.get_key_by_known_token(token)
@@ -444,41 +444,42 @@ class SlackArchive(object):
             return False, '0', bulk_op_count
         return msgs['has_more'], last_import_ts, bulk_op_count
 
-    def _update_stream(self, item, src_user=None):
-        sid = item['id']
-        stream = dict(self.streams.get(sid, {}))
-        item_type = SlackArchive._stream_type(item)
+    def _update_stream(self, stream_dict, src_user=None):
+        sid = stream_dict['id']
+        stream_dict = dict(self.streams.get(sid, {}))
+        item_type = SlackArchive._stream_type(stream_dict)
 
-        stream['name'] = item.get('name')
+        stream_dict['name'] = stream_dict.get('name')
         if item_type == SlackArchive.DIRECT:
-            members = item.get('members', [])
+            members = stream_dict.get('members', [])
             if not members:
                 assert src_user is not None
-                members = [src_user, item['user']]
+                members = [src_user, stream_dict['user']]
             logins = ['@'+self.people[m]['login'] for m in members]
-            stream['name'] = '+'.join(sorted(logins))
-        is_archived = (item.get('is_archived', False) or
-                       item.get('is_user_deleted', False))
-        stream['active'] = not is_archived
-        stream['topic'] = ('' if 'topic' not in item
-                           else item['topic']['value'])
-        pins = SlackArchive._pins_from_stream(item)
+            stream_dict['name'] = '+'.join(sorted(logins))
+        is_archived = (stream_dict.get('is_archived', False) or
+                       stream_dict.get('is_user_deleted', False))
+        stream_dict['active'] = not is_archived
+        stream_dict['topic'] = ('' if 'topic' not in stream_dict
+                                else stream_dict['topic']['value'])
+        pins = SlackArchive._pins_from_stream(stream_dict)
         if pins:
-            stream['pins'] = pins
-        stream['type'] = item_type
-        stream['purpose'] = ('' if 'purpose' not in item
-                             else item['purpose']['value'])
+            stream_dict['pins'] = pins
+        stream_dict['type'] = item_type
+        stream_dict['purpose'] = ('' if 'purpose' not in stream_dict
+                                  else stream_dict['purpose']['value'])
         # TODO Add cheap method for mongo_store for this
-        self.streams[sid] = stream
+        self.streams[sid] = stream_dict
 
     @staticmethod
-    def _stream_type(item):
-        if item.get('is_mpim', False) or item.get('is_im', False):
+    def _stream_type(stream_dict):
+        if (stream_dict.get('is_mpim', False) or
+                stream_dict.get('is_im', False)):
             item_type = SlackArchive.DIRECT
-        elif item.get('is_group', False):
+        elif stream_dict.get('is_group', False):
             item_type = SlackArchive.PRIVATE
         else:
-            assert item['is_channel']
+            assert stream_dict['is_channel']
             item_type = SlackArchive.PUBLIC
         return item_type
 
@@ -596,8 +597,8 @@ class SlackArchive(object):
         return False
 
     def stat(self):
-        total = sum(person.get('active', False)
-                    for person in self.people.values()) - 1  # minus slackbot
+        people = sum(person.get('active', False)
+                     for person in self.people.values()) - 1  # minus slackbot
         tokens = len(self.tokens)
         advanced = sum(person['full_access']
                        for person in self.tokens.values())
@@ -611,7 +612,7 @@ class SlackArchive(object):
         return [
             {'Advanced auth people': advanced},
             {'Any slag auth people': tokens},
-            {'People in team': total},
+            {'People in team': people},
             {'': ''},
             {'Public channels': public},
             {'Private groups': private},
