@@ -35,7 +35,10 @@ class Markup(object):
     """Converting markup to HTML"""
 
     def user_name(self, user):
-        return '@'+self.people[user[1:]]['login']
+        uid = user[1:]
+        if uid in self.people:
+            return '@'+self.people[uid]['login']
+        return user
 
     def stream_name(self, stream):
         return '#'+self.streams[stream[1:]]['name']
