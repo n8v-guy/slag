@@ -8,7 +8,6 @@ import functools
 import hashlib
 import logging
 import os
-import platform
 import time
 import threading
 
@@ -204,7 +203,7 @@ class Scheduler(object):
         # env to de/serialize jobs
         self._ctx = ctx
         with self._ctx:
-            self._coll = mongo.db.get_collection('jobs_' + platform.node())
+            self._coll = mongo.db.get_collection('jobs')
             self._coll.create_index([('when', -1)])
             self._coll.create_index([('who', -1)])
         self.env = Env(ctx=ctx, mongo=mongo, scheduler=self)
