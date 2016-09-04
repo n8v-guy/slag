@@ -39,14 +39,15 @@ def equals_soft(func_left, func_right):
 
 def pure_base64_dumps(elem):
     """return pure base64 value, without CR & equals signs"""
-    return base64.encodestring(elem).replace('=', '').replace('\n', '')
+    return base64.b64encode(six.binary_type(elem))\
+        .replace('=', '').replace('\n', '')
 
 
 def pure_base64_loads(elem):
     """return source value from base64, adding mandatory equals signs"""
     while len(elem) % 8 != 0:
         elem += '='
-    return base64.decodestring(elem)
+    return base64.b64decode(elem).decode('utf8')
 
 
 class Callable(object):
