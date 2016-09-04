@@ -451,14 +451,14 @@ class SlackArchive(object):
         self.streams[sid] = stream_dict
 
     @staticmethod
-    def _stream_type(stream_dict):
-        if (stream_dict.get('is_mpim', False) or
-                stream_dict.get('is_im', False)):
+    def _stream_type(api_stream):
+        if (api_stream.get('is_mpim', False) or
+                api_stream.get('is_im', False)):
             item_type = SlackArchive.DIRECT
-        elif stream_dict.get('is_group', False):
+        elif api_stream.get('is_group', False):
             item_type = SlackArchive.PRIVATE
         else:
-            assert stream_dict['is_channel']
+            assert api_stream['is_channel']
             item_type = SlackArchive.PUBLIC
         return item_type
 
