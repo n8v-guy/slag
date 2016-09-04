@@ -600,9 +600,15 @@ class SlackArchive(object):
             {'': ''},
             {'Total messages imported': msgs_stat['count']},
             {'': ''},
-            {'Collections size': str(int(mongo_stat['dataSize'] /
-                                         1024 / 1024)) + ' MB'},
+            {'Collections size': '{:.2f} MB (waste {:.2f} MB)'.format(
+                mongo_stat['storageSize'] / 1024 / 1024,
+                (mongo_stat['storageSize'] - mongo_stat['dataSize']) /
+                1024 / 1024)},
             {'Indices size': str(int(mongo_stat['indexSize'] /
                                      1024 / 1024)) + ' MB'},
-            {'Disk size': str(mongo_stat['fileSize'] / 1024 / 1024) + ' MB'},
+            {'Disk size': '{:.2f} MB (waste {:.2f} MB)'.format(
+                mongo_stat['fileSize'] / 1024 / 1024,
+                (mongo_stat['fileSize'] - mongo_stat['storageSize'] -
+                 mongo_stat['indexSize']) /
+                1024 / 1024)},
         ]
