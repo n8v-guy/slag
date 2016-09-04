@@ -423,30 +423,30 @@ class SlackArchive(object):
             return False, '0', bulk_op_count
         return msgs['has_more'], last_import_ts, bulk_op_count
 
-    def _update_stream(self, stream_dict, src_user=None):
-        sid = stream_dict['id']
+    def _update_stream(self, api_stream, src_user=None):
+        sid = api_stream['id']
         stream_dict = dict(self.streams.get(sid, {}))
-        item_type = SlackArchive._stream_type(stream_dict)
+        item_type = SlackArchive._stream_type(api_stream)
 
-        stream_dict['name'] = stream_dict.get('name')
+        stream_dict['name'] = api_stream.get('name')
         if item_type == SlackArchive.DIRECT:
-            members = stream_dict.get('members', [])
+            members = api_stream.get('members', [])
             if not members:
                 assert src_user is not None
-                members = [src_user, stream_dict['user']]
+                members = [src_user, api_stream['user']]
             logins = ['@'+self.people[m]['login'] for m in members]
             stream_dict['name'] = '+'.join(sorted(logins))
-        is_archived = (stream_dict.get('is_archived', False) or
-                       stream_dict.get('is_user_deleted', False))
+        is_archived = (api_stream.get('is_archived', False) or
+                       api_stream.get('is_user_deleted', False))
         stream_dict['active'] = not is_archived
-        stream_dict['topic'] = ('' if 'topic' not in stream_dict
-                                else stream_dict['topic']['value'])
-        pins = SlackArchive._pins_from_stream(stream_dict)
+        stream_dict['topic'] = ('' if 'topic' not in api_stream
+                                else api_stream['topic']['value'])
+        pins = SlackArchive._pins_from_stream(api_stream)
         if pins:
             stream_dict['pins'] = pins
         stream_dict['type'] = item_type
-        stream_dict['purpose'] = ('' if 'purpose' not in stream_dict
-                                  else stream_dict['purpose']['value'])
+        stream_dict['purpose'] = ('' if 'purpose' not in api_stream
+                                  else api_stream['purpose']['value'])
         # TODO Add cheap method for mongo_store for this
         self.streams[sid] = stream_dict
 
