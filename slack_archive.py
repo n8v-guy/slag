@@ -588,6 +588,7 @@ class SlackArchive(object):
         direct = sum(stream['type'] == SlackArchive.DIRECT
                      for stream in self.streams.values())
         msgs_stat = self.mongo.db.command('collstats', 'messages')
+        mongo_stat = self.mongo.db.command('dbstats')
         return [
             {'Advanced auth people': advanced},
             {'Any slag auth people': tokens},
@@ -596,6 +597,12 @@ class SlackArchive(object):
             {'Public channels': public},
             {'Private groups': private},
             {'Direct message streams': direct},
+            {'': ''},
             {'Total messages imported': msgs_stat['count']},
-            {'Total messages size': msgs_stat['storageSize']},
+            {'': ''},
+            {'Collections size': str(int(mongo_stat['dataSize'] /
+                                         1024 / 1024)) + ' MB'},
+            {'Indices size': str(int(mongo_stat['indexSize'] /
+                                     1024 / 1024)) + ' MB'},
+            {'Disk size': str(mongo_stat['fileSize'] / 1024 / 1024) + ' MB'},
         ]
