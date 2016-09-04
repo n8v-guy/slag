@@ -336,7 +336,8 @@ class Scheduler(object):
         """Process job results"""
         try:
             LOG.info('scheduler: start job ' + job.get_id())
-            job_res = job.run()
+            with self.env.ctx:
+                job_res = job.run()
             LOG.info('scheduler: finish job ' + job.get_id())
             self.serialize_job(job, update=True)
             return job_res
