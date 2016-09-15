@@ -373,7 +373,7 @@ class SlackArchive(object):
     @scheduler.task_logging
     def fetch_public_messages(self):
         self.log.info('Fetching public channels messages')
-        self.create_messages_indicies()
+        self.create_messages_indices()
         try:
             chans_list = self.api_handle.channels.list().body
             SlackArchive.api_call_delay()
@@ -510,13 +510,13 @@ class SlackArchive(object):
                 self.streams.reload()
                 # import messages
                 result, types_new = self._import_messages(channels, archive)
-                self.create_messages_indicies()
+                self.create_messages_indices()
         skip_fields = ['upserted', 'modified', 'matched']
         for field in skip_fields:
             result.pop(field, None)
         return result, types_new
 
-    def create_messages_indicies(self):
+    def create_messages_indices(self):
         self.mongo.db.messages.create_index('ts')
         self.mongo.db.messages.create_index('to')
         self.mongo.db.messages.create_index('type')
