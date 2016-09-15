@@ -32,7 +32,8 @@ class SlackArchive(object):
         self.api_handle = Slacker(api_key)
         self.scheduler = scheduler.Scheduler(ctx, mongo)
         self._setup_scheduler()
-        self.scheduler.start()
+        # DISABLE AUTO UPDATE IN PRODUCTION
+        # self.scheduler.start()
 
     def _setup_scheduler(self):
         self.scheduler.every(25).minutes.do(self.people_fetch_all)
@@ -198,7 +199,8 @@ class SlackArchive(object):
             'channel_join', 'channel_leave',
             'channel_archive', 'channel_unarchive'}
         # format is not supported yet
-        types_ignore = {'pinned_item', 'file_comment', 'bot_message'}
+        types_ignore = {'pinned_item', 'file_comment',
+                        'bot_message', 'is_ephemeral'}
         return types_import, types_ignore
 
     @staticmethod
@@ -213,7 +215,7 @@ class SlackArchive(object):
                         'members', 'purpose', 'topic', 'comment', 'item',
                         'attachments', 'file', 'reactions', 'name', 'old_name',
                         'icons', 'is_intro', 'no_notifications',
-                        'room', 'channel'}
+                        'room', 'channel', 'is_ephemeral'}
         for msg in msgs:
             unknown_fields = set(msg.keys()) - known_fields
             assert len(unknown_fields) == 0, ', '.join(unknown_fields)
@@ -239,6 +241,7 @@ class SlackArchive(object):
                           'to': channel['id']}})
         return msg_counter, msgs[0]['ts']
 
+    @scheduler.task_logging
     def tokens_validation(self):
         self.log.info('Validating tokens')
         for token, enc_key in self.tokens.decrypt_keys_map().items():
@@ -256,6 +259,7 @@ class SlackArchive(object):
             self.log.info('Valid token')
             self.tokens.upsert(token, user_info)
 
+    @scheduler.task_logging
     def people_fetch_all(self):
         self.log.info('Fetching people list')
         try:
@@ -307,6 +311,7 @@ class SlackArchive(object):
                 if str(err) == 'missing_scope':
                     self.tokens.set_field(enc_key, 'full_access', False)
 
+    @scheduler.task_logging
     def fetch_private_messages(self):
         self.log.info('Fetching private groups & ims messages')
         for token, enc_key in self.tokens.decrypt_keys_map().items():
@@ -320,6 +325,7 @@ class SlackArchive(object):
             self.log.info('Fetching private ims for %s', user_info['login'])
             self._fetch_person_ims_history(user_info, api_handle)
 
+    @scheduler.task_logging
     def update_streams_properties(self):
         self.log.info('Updating streams properties')
         empty_count = 0
@@ -364,8 +370,10 @@ class SlackArchive(object):
                                        inclusive=0, count=1000)
         self._fetch_stream_messages(api_loader, ims['ims'])
 
+    @scheduler.task_logging
     def fetch_public_messages(self):
         self.log.info('Fetching public channels messages')
+        self.create_messages_indicies()
         try:
             chans_list = self.api_handle.channels.list().body
             SlackArchive.api_call_delay()
@@ -502,16 +510,19 @@ class SlackArchive(object):
                 self.streams.reload()
                 # import messages
                 result, types_new = self._import_messages(channels, archive)
-                self.mongo.db.messages.create_index('ts')
-                self.mongo.db.messages.create_index('to')
-                self.mongo.db.messages.create_index('type')
-                self.mongo.db.messages.create_index('from')
-                self.mongo.db.messages.create_index([('msg', 'text')],
-                                                    default_language='ru')
+                self.create_messages_indicies()
         skip_fields = ['upserted', 'modified', 'matched']
         for field in skip_fields:
             result.pop(field, None)
         return result, types_new
+
+    def create_messages_indicies(self):
+        self.mongo.db.messages.create_index('ts')
+        self.mongo.db.messages.create_index('to')
+        self.mongo.db.messages.create_index('type')
+        self.mongo.db.messages.create_index('from')
+        self.mongo.db.messages.create_index([('msg', 'text')],
+                                            default_language='ru')
 
     @staticmethod
     def users_list(domain):
