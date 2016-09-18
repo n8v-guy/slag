@@ -2,14 +2,17 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=fixme,missing-docstring
 
+from __future__ import print_function, division
 import collections
 import functools
 import itertools
 import os
+import sys
 import time
 
 import flask
 import flask_pymongo
+import gunicorn.app.base
 import rollbar
 import rollbar.contrib.flask
 from slacker import Slacker, Error
@@ -18,6 +21,7 @@ from slacker import Slacker, Error
 import bootstrap  # noqa # pylint: disable=unused-import
 import slack_archive
 import store
+
 
 SLACK_CLIENT_ID = os.environ['SLACK_CLIENT_ID']
 SLACK_CLIENT_SECRET = os.environ['SLACK_CLIENT_SECRET']
@@ -67,6 +71,9 @@ class WebServer(FlaskExt):
     """Wrapper for web-server functionality"""
     def __init__(self):
         super(WebServer, self).__init__(__name__)
+        if (os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and
+                'gunicorn' not in os.environ.get('SERVER_SOFTWARE', '')):
+            return  # skip any heavy operations for Werkzeug debug wrapper
         if ROLLBAR_KEY:
             self.setup_rollbar()
         self.before_request(WebServer._redirect_to_https)
@@ -80,22 +87,12 @@ class WebServer(FlaskExt):
                 self.mongo, ctx, self.tokens, SLACK_TEAM_TOKEN)
 
     @staticmethod
-    def start():
-        if WebServer.is_production():
-            host = '0.0.0.0'
-            port = int(os.environ.get('PORT', 80))
-        else:
-            host = '127.0.0.1'
-            port = 8080
-        # __name__ == 'app' for gunicorn production
-        debug = (__name__ == '__main__')
-
-        if debug and os.environ.get('WERKZEUG_RUN_MAIN', 'false') != 'true':
-            # lightweight starter for Werkzeug reloader
-            app = flask.Flask(__name__)
-        else:
-            app = WebServer()  # pylint: disable=redefined-variable-type
-        app.run(host=host, port=port, debug=debug)
+    def start(wsgi_mode):
+        app = WebServer()
+        if not wsgi_mode:
+            app.run(host='::', port=int(os.environ.get('PORT', 8080)),
+                    debug=True)
+        return app
 
     def setup_rollbar(self):
         """extend reports with user context"""
@@ -393,4 +390,38 @@ class WebServer(FlaskExt):
         return response
 
 
-WebServer.start()
+class GUnicornRunner(gunicorn.app.base.BaseApplication):
+    """GUnicorn wrapper to avoid pickling too much server logic"""
+    def __init__(self):
+        super(GUnicornRunner, self).__init__()
+
+    def init(self, parser, opts, args):
+        """We need to override this"""
+        pass
+
+    def load_config(self):
+        """Default hardcoded config"""
+        setup = {
+            'bind': '[::]:80',
+            'workers': 8,
+            'daemon': True,
+            'timeout': 10*60,  # wait before results
+            'graceful_timeout': 0,  # wait before kill after timeout
+            'accesslog': '-',  # log to stderr
+            'enable_stdio_inheritance': True,
+        }
+        for opt_key, opt_value in setup.items():
+            self.cfg.set(opt_key, opt_value)
+
+    def load(self):
+        """Lazy init (called after fork)"""
+        return WebServer.start(wsgi_mode=True)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '--gunicorn':
+        GUnicornRunner().run()
+    elif len(sys.argv) > 1 and sys.argv[1] == '--flask':
+        WebServer.start(wsgi_mode=False)
+    else:
+        print('Usage: {0} --gunicorn, {0} --flask'.format(sys.argv[0]))
