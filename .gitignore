@@ -73,3 +73,6 @@ bootstrap.py
 .DS_Store
 .idea
 archive.zip
+
+# ssl certificates
+*.pem

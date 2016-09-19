@@ -4,13 +4,14 @@ colorama==0.3.7
 flake8==2.6.0
 Flask==0.10.1
 Flask-PyMongo==0.4.0
-gunicorn==19.4.5
+gunicorn==19.6.0
 itsdangerous==0.24
 Jinja2==2.8
 lazy-object-proxy==1.2.2
 MarkupSafe==0.23
 mccabe==0.5.0
 newrelic==2.66.0.49
+psutil==4.3.1
 pycodestyle==2.0.0
 pycrypto==2.6.1
 pyflakes==1.2.3
@@ -23,4 +24,3 @@ six==1.10.0
 slacker==0.9.0
 Werkzeug==0.11.3
 wrapt==1.10.8
-psutil==4.3.1
