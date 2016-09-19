@@ -3,6 +3,7 @@ import functools
 import json
 import logging
 import os
+import random
 import time
 import zipfile
 
@@ -32,8 +33,7 @@ class SlackArchive(object):
         self.api_handle = Slacker(api_key)
         self.scheduler = scheduler.Scheduler(ctx, mongo)
         self._setup_scheduler()
-        # DISABLE AUTO UPDATE IN PRODUCTION
-        # self.scheduler.start()
+        self.scheduler.start()
 
     def _setup_scheduler(self):
         self.scheduler.every(25).minutes.do(self.people_fetch_all)
@@ -271,7 +271,8 @@ class SlackArchive(object):
         # TODO add bulk_op wrapper for mongo_store
         for person in people['members']:
             item_id = person['id']
-            person_dict = dict(self.people.get(item_id, {}))
+            person_dict = dict(self.people[item_id]) \
+                if item_id in self.people.keys() else {}
             person_dict['name'] = person['profile']['real_name']
             person_dict['login'] = person['name']
             person_dict['avatar'] = person['profile']['image_72']
@@ -314,7 +315,10 @@ class SlackArchive(object):
     @scheduler.task_logging
     def fetch_private_messages(self):
         self.log.info('Fetching private groups & ims messages')
-        for token, enc_key in self.tokens.decrypt_keys_map().items():
+        # shuffle users array
+        tokens_to_keys = self.tokens.decrypt_keys_map().items()
+        random.shuffle(tokens_to_keys)
+        for token, enc_key in tokens_to_keys:
             user_info = self.tokens[enc_key]
             if not user_info['full_access']:
                 continue
@@ -433,7 +437,8 @@ class SlackArchive(object):
 
     def _update_stream(self, api_stream, src_user=None):
         sid = api_stream['id']
-        stream_dict = dict(self.streams.get(sid, {}))
+        stream_dict = dict(self.streams[sid]) if sid in self.streams.keys() \
+            else {}
         item_type = SlackArchive._stream_type(api_stream)
 
         stream_dict['name'] = api_stream.get('name')
@@ -442,7 +447,9 @@ class SlackArchive(object):
             if not members:
                 assert src_user is not None
                 members = [src_user, api_stream['user']]
-            logins = ['@'+self.people[m]['login'] for m in members]
+            logins = ['@'+(self.people[m]['login']
+                           if m in self.people.keys() else m)
+                      for m in members]
             stream_dict['name'] = '+'.join(sorted(logins))
         is_archived = (api_stream.get('is_archived', False) or
                        api_stream.get('is_user_deleted', False))
@@ -587,11 +594,11 @@ class SlackArchive(object):
         return False
 
     def stat(self):
-        people = sum(person.get('active', False)
-                     for person in self.people.values()) - 1  # minus slackbot
-        tokens = len(self.tokens)
-        advanced = sum(person['full_access']
-                       for person in self.tokens.values())
+        people_count = sum(person.get('active', False)
+                           for person in self.people.values())
+        tokens_count = len(self.tokens)
+        advanced_auth_count = sum(person['full_access']
+                                  for person in self.tokens.values())
         public = sum(stream['type'] == SlackArchive.PUBLIC
                      for stream in self.streams.values())
         private = sum(stream['type'] == SlackArchive.PRIVATE
@@ -599,27 +606,14 @@ class SlackArchive(object):
         direct = sum(stream['type'] == SlackArchive.DIRECT
                      for stream in self.streams.values())
         msgs_stat = self.mongo.db.command('collstats', 'messages')
-        mongo_stat = self.mongo.db.command('dbstats')
         return [
-            {'Advanced auth people': advanced},
-            {'Any slag auth people': tokens},
-            {'People in team': people},
+            {'Full access logins': advanced_auth_count},
+            {'Limited access logins': tokens_count-advanced_auth_count},
+            {'People in team': people_count},
             {'': ''},
             {'Public channels': public},
             {'Private groups': private},
             {'Direct message streams': direct},
             {'': ''},
             {'Total messages imported': msgs_stat['count']},
-            {'': ''},
-            {'Collections size': '{:.2f} MB (waste {:.2f} MB)'.format(
-                mongo_stat['storageSize'] / 1024 / 1024,
-                (mongo_stat['storageSize'] - mongo_stat['dataSize']) /
-                1024 / 1024)},
-            {'Indices size': str(int(mongo_stat['indexSize'] /
-                                     1024 / 1024)) + ' MB'},
-            {'Disk size': '{:.2f} MB (waste {:.2f} MB)'.format(
-                mongo_stat['fileSize'] / 1024 / 1024,
-                (mongo_stat['fileSize'] - mongo_stat['storageSize'] -
-                 mongo_stat['indexSize']) /
-                1024 / 1024)},
         ]
