@@ -91,7 +91,7 @@ class WebServer(FlaskExt):
         app = WebServer()
         if not wsgi_mode:
             app.run(host='::', port=int(os.environ.get('PORT', 8080)),
-                    ssl_context=('cert.pem', 'privkey.pem'), debug=True)
+                    ssl_context=('fullchain.pem', 'privkey.pem'), debug=True)
         return app
 
     def setup_rollbar(self):
@@ -405,6 +405,7 @@ class GUnicornRunner(gunicorn.app.base.BaseApplication):
             'bind': '[::]:{}'.format(int(os.environ.get('PORT', 8080))),
             'certfile': 'cert.pem',
             'keyfile': 'privkey.pem',
+            'ca_certs': 'chain.pem',
             'workers': 8,
             'daemon': True,
             'timeout': 10*60,  # wait before results
