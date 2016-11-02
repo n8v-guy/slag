@@ -12,6 +12,7 @@ import time
 import threading
 
 import psutil
+import rollbar
 
 import callable_ref
 
@@ -62,6 +63,8 @@ def task_logging(func):
         # pylint: disable=broad-except
         except Exception:
             LOG.exception('scheduler [%s] exception', func.__name__)
+            if rollbar._initialized:  # pylint: disable=protected-access
+                rollbar.report_exc_info()
             raise RestartJob()
     return wrapper
 
