@@ -215,7 +215,9 @@ class SlackArchive(object):
                         'members', 'purpose', 'topic', 'comment', 'item',
                         'attachments', 'file', 'reactions', 'name', 'old_name',
                         'icons', 'is_intro', 'no_notifications',
-                        'room', 'channel', 'is_ephemeral'}
+                        'room', 'channel', 'is_ephemeral',
+                        'parent_user_id', 'thread_ts', 'reply_count',
+                        'subscribed', 'replies'}
         for msg in msgs:
             unknown_fields = set(msg.keys()) - known_fields
             assert len(unknown_fields) == 0, ', '.join(unknown_fields)
