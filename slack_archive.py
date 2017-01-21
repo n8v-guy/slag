@@ -36,6 +36,7 @@ class SlackArchive(object):
         self.scheduler.start()
 
     def _setup_scheduler(self):
+        self.fetch_public_messages()
         self.scheduler.every(25).minutes.do(self.people_fetch_all)
         self.scheduler.every(25).minutes.do(self.tokens_validation)
         self.scheduler.every(25).minutes.do(self.fetch_public_messages)
@@ -219,7 +220,7 @@ class SlackArchive(object):
                         'parent_user_id', 'thread_ts', 'reply_count',
                         'subscribed', 'replies',
                         'channel_type', 'channel_id', 'is_multiteam',
-                        'timestamp'}
+                        'timestamp', 'unread_count', 'last_read'}
         for msg in msgs:
             unknown_fields = set(msg.keys()) - known_fields
             assert len(unknown_fields) == 0, ', '.join(unknown_fields)
