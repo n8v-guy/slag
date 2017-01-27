@@ -36,7 +36,6 @@ class SlackArchive(object):
         self.scheduler.start()
 
     def _setup_scheduler(self):
-        self.fetch_public_messages()
         self.scheduler.every(25).minutes.do(self.people_fetch_all)
         self.scheduler.every(25).minutes.do(self.tokens_validation)
         self.scheduler.every(25).minutes.do(self.fetch_public_messages)
