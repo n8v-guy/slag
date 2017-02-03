@@ -219,7 +219,9 @@ class SlackArchive(object):
                         'parent_user_id', 'thread_ts', 'reply_count',
                         'subscribed', 'replies',
                         'channel_type', 'channel_id', 'is_multiteam',
-                        'timestamp', 'unread_count', 'last_read'}
+                        'timestamp', 'unread_count', 'last_read',
+                        'slog_is_self_dm', 'slog_is_mpdm', 'slog_is_shared',
+                        'slog_is_slackbot_dm'}
         for msg in msgs:
             unknown_fields = set(msg.keys()) - known_fields
             assert len(unknown_fields) == 0, ', '.join(unknown_fields)
@@ -384,6 +386,7 @@ class SlackArchive(object):
         self.create_messages_indices()
         try:
             chans_list = self.api_handle.channels.list().body
+            random.shuffle(chans_list['channels'])
             SlackArchive.api_call_delay()
         except Error as err:
             self.mongo.db.z_errors.insert_one({'_id': time.time(),
@@ -391,6 +394,7 @@ class SlackArchive(object):
                                                'msg': str(err)})
             self.log.exception('Fetch public messages error %s', str(err))
             return
+
         self.update_streams(chans_list)
         api_loader = functools.partial(self.api_handle.channels.history,
                                        inclusive=0, count=1000)
