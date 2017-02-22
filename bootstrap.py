@@ -46,6 +46,8 @@ for https://rollbar.com/ service (crash reporting), which you can skip:
 # os.environ['CRYPTO_KEY'] = ''
 # os.environ['ROLLBAR_KEY'] = ''
 """
+Now you can import messages archive from https://TEAMNAME.slack.com/services/export
+at /import page (works only on 127.0.0.1 yet).
 That's it, I hope it's done quickly & easily. But wait, couple more optional
 environment variables: DEBUG_SERVER (set to '1') to enable stacktrace & debug
 on production server, and PORT to override port number in production (like if
