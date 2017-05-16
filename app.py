@@ -4,7 +4,6 @@
 
 from __future__ import print_function, division
 import collections
-import functools
 import itertools
 import os
 import sys
@@ -13,8 +12,7 @@ import time
 import flask
 import flask_pymongo
 import gunicorn.app.base
-import rollbar
-import rollbar.contrib.flask
+import raven.contrib.flask
 from slacker import Slacker, Error
 
 # noinspection PyUnresolvedReferences
@@ -29,7 +27,7 @@ SLACK_TEAM_ID = os.environ['SLACK_TEAM_ID']
 SLACK_TEAM_TOKEN = os.environ['SLACK_TEAM_TOKEN']
 MONGO_URI = os.environ['MONGO_URI']
 CRYPTO_KEY = os.environ['CRYPTO_KEY']
-ROLLBAR_KEY = os.environ['ROLLBAR_KEY']
+SENTRY_URI = os.environ['SENTRY_KEY']
 
 BASIC_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               '&client_id=' + SLACK_CLIENT_ID + '&scope=team:read,' +
@@ -74,8 +72,9 @@ class WebServer(FlaskExt):
         if (os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and
                 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', '')):
             return  # skip any heavy operations for Werkzeug debug wrapper
-        if ROLLBAR_KEY:
-            self.setup_rollbar()
+
+        if SENTRY_URI:
+            self.sentry = raven.contrib.flask.Sentry(self, dsn=SENTRY_URI)
         self.before_request(WebServer._redirect_to_https)
         self.before_request(self._check_auth)
         self.config['MONGO_URI'] = MONGO_URI
@@ -93,36 +92,6 @@ class WebServer(FlaskExt):
             app.run(host='::', port=int(os.environ.get('PORT', 8080)),
                     ssl_context=('fullchain.pem', 'privkey.pem'), debug=True)
         return app
-
-    def setup_rollbar(self):
-        """extend reports with user context"""
-        # pylint: disable=too-many-ancestors
-        class CustomRequest(flask.Request):
-            @property
-            def rollbar_person(self):
-                return {'id': self.cookies.get('auth')}
-        self.request_class = CustomRequest
-
-        # setup Rollbar error reporting
-        self.before_first_request(
-            functools.partial(WebServer.init_rollbar, self))
-
-    @staticmethod
-    def init_rollbar(app):
-        """init rollbar module"""
-        rollbar.init(
-            ROLLBAR_KEY,
-            # environment name
-            'production' if WebServer.is_production() else 'flasktest',
-            # server root directory, makes tracebacks prettier
-            root=os.path.dirname(os.path.realpath(__file__)),
-            # flask already sets up logging
-            allow_logging_basic_config=False)
-
-        # send exceptions from `app` to rollbar, using flask's signal system.
-        flask.got_request_exception.connect(
-            rollbar.contrib.flask.report_exception,
-            app)
 
     @staticmethod
     def _is_forced_debug():

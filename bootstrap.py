@@ -40,13 +40,14 @@ then to the https://api.slack.com/methods/auth.test/test for getting second:
 We're almost done here, now you need to put your MongoDB instance uri
 (if you don't know what is it, try to use free quota at https://mlab.com/),
 encrypting key (it can be any random, but constant input), plus optional key
-for https://rollbar.com/ service (crash reporting), which you can skip:
+for https://sentry.io/ service (crash reporting), which you can skip:
 """
 # os.environ['MONGO_URI'] = ''
 # os.environ['CRYPTO_KEY'] = ''
-# os.environ['ROLLBAR_KEY'] = ''
+# os.environ['SENTRY_URI'] = ''
 """
-Now you can import messages archive from https://TEAMNAME.slack.com/services/export
+Now you can import messages archive from
+https://TEAMNAME.slack.com/services/export
 at /import page (works only on 127.0.0.1 yet).
 That's it, I hope it's done quickly & easily. But wait, couple more optional
 environment variables: DEBUG_SERVER (set to '1') to enable stacktrace & debug
