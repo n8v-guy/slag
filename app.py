@@ -27,7 +27,7 @@ SLACK_TEAM_ID = os.environ['SLACK_TEAM_ID']
 SLACK_TEAM_TOKEN = os.environ['SLACK_TEAM_TOKEN']
 MONGO_URI = os.environ['MONGO_URI']
 CRYPTO_KEY = os.environ['CRYPTO_KEY']
-SENTRY_URI = os.environ['SENTRY_KEY']
+SENTRY_URI = os.environ['SENTRY_URI']
 
 BASIC_LINK = ('https://slack.com/oauth/authorize?team=' + SLACK_TEAM_ID +
               '&client_id=' + SLACK_CLIENT_ID + '&scope=team:read,' +
