@@ -221,8 +221,9 @@ class SlackArchive(object):
                         'channel_type', 'channel_id', 'is_multiteam',
                         'timestamp', 'unread_count', 'last_read',
                         'slog_is_self_dm', 'slog_is_mpdm', 'slog_is_shared',
-                        'slog_is_slackbot_dm', 'upload_reply_to', 'root', 'hidden',
-                        'is_thread_broadcast', 'new_broadcast', 'plain_text'}
+                        'slog_is_slackbot_dm', 'upload_reply_to', 'root',
+                        'is_thread_broadcast', 'new_broadcast', 'plain_text',
+                        'hidden',}
         for msg in msgs:
             unknown_fields = set(msg.keys()) - known_fields
             assert len(unknown_fields) == 0, ', '.join(unknown_fields)
