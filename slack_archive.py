@@ -224,7 +224,7 @@ class SlackArchive(object):
                         'slog_is_self_dm', 'slog_is_mpdm', 'slog_is_shared',
                         'slog_is_slackbot_dm', 'upload_reply_to', 'root',
                         'is_thread_broadcast', 'new_broadcast', 'plain_text',
-                        'hidden', 'bot_link',}
+                        'hidden', 'bot_link', }
         for msg in msgs:
             unknown_fields = set(msg.keys()) - known_fields
             print(unknown_fields)
